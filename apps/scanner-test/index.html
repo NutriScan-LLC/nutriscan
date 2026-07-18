@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BioZoom Transport Test Harness</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 720px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      button {
+        margin-right: 0.5rem;
+      }
+      #controls {
+        display: flex;
+        gap: 0.5rem;
+        margin: 1rem 0;
+        flex-wrap: wrap;
+      }
+      #text-input {
+        flex: 1;
+        min-width: 200px;
+      }
+      #log {
+        background: #111;
+        color: #0f0;
+        font-family: ui-monospace, monospace;
+        font-size: 0.85rem;
+        padding: 1rem;
+        height: 400px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        word-break: break-all;
+        border-radius: 4px;
+      }
+      #status {
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>BioZoom Transport Test Harness</h1>
+    <p>
+      Milestone 1 scope: exercises the raw <code>Transport</code> interface
+      only. No protocol parsing, no scanner commands.
+    </p>
+    <p>Status: <span id="status">disconnected</span></p>
+    <div id="controls">
+      <button id="connect">Connect</button>
+      <button id="disconnect" disabled>Disconnect</button>
+      <input id="text-input" type="text" placeholder="UTF-8 text to send" disabled />
+      <button id="send-text" disabled>Send Text</button>
+      <button id="clear-log">Clear Log</button>
+    </div>
+    <div id="log"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

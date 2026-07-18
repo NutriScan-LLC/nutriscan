@@ -1,0 +1,19 @@
+{
+  "name": "@nutriscan/scanner-test",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Manual browser harness for exercising the transport layer. No protocol/UI mixing — talks only to Transport.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@nutriscan/biozoom-sdk": "^0.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3"
+  }
+}
