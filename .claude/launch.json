@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "nutriscan",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "apps/web/nutriscan", "run", "dev"],
+      "port": 3000,
+      "autoPort": true
+    },
+    {
+      "name": "scanner-test",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "apps/scanner-test", "run", "dev"],
+      "port": 5173,
+      "autoPort": true
+    }
+  ]
+}

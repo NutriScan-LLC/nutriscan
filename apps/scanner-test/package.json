@@ -10,7 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@nutriscan/biozoom-sdk": "^0.1.0"
+    "@nutriscan/scanner-sdk": "*"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

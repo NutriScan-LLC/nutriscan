@@ -3,16 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>BioZoom Transport Test Harness</title>
+    <title>BioZoom Scanner Hardware Diagnostic</title>
     <style>
       body {
         font-family: system-ui, sans-serif;
-        max-width: 720px;
+        max-width: 820px;
         margin: 2rem auto;
         padding: 0 1rem;
       }
       button {
         margin-right: 0.5rem;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
       }
       #controls {
         display: flex;
@@ -20,9 +24,67 @@
         margin: 1rem 0;
         flex-wrap: wrap;
       }
-      #text-input {
-        flex: 1;
-        min-width: 200px;
+      #status {
+        font-weight: bold;
+      }
+      #status[data-state='connected'] {
+        color: #0a0;
+      }
+      #status[data-state='disconnected'] {
+        color: #666;
+      }
+      #status[data-state='failed'] {
+        color: #c00;
+      }
+      #error-banner {
+        display: none;
+        background: #fdecea;
+        color: #a4302b;
+        border: 1px solid #f5c6cb;
+        border-radius: 4px;
+        padding: 0.75rem 1rem;
+        margin: 1rem 0;
+        font-size: 0.9rem;
+        white-space: pre-wrap;
+      }
+      #error-banner.visible {
+        display: block;
+      }
+      section {
+        margin: 1.5rem 0;
+      }
+      h2 {
+        font-size: 1rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #444;
+        margin-bottom: 0.5rem;
+      }
+      dl {
+        display: grid;
+        grid-template-columns: max-content 1fr;
+        gap: 0.35rem 1rem;
+        margin: 0;
+      }
+      dt {
+        font-weight: 600;
+        color: #333;
+      }
+      dd {
+        margin: 0;
+        font-family: ui-monospace, monospace;
+      }
+      #raw-response {
+        background: #f4f4f4;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 0.75rem;
+        font-family: ui-monospace, monospace;
+        font-size: 0.85rem;
+        white-space: pre-wrap;
+        word-break: break-all;
+        max-height: 260px;
+        overflow-y: auto;
       }
       #log {
         background: #111;
@@ -30,32 +92,53 @@
         font-family: ui-monospace, monospace;
         font-size: 0.85rem;
         padding: 1rem;
-        height: 400px;
+        height: 320px;
         overflow-y: auto;
         white-space: pre-wrap;
         word-break: break-all;
         border-radius: 4px;
       }
-      #status {
-        font-weight: bold;
-      }
     </style>
   </head>
   <body>
-    <h1>BioZoom Transport Test Harness</h1>
+    <h1>BioZoom Scanner Hardware Diagnostic</h1>
     <p>
-      Milestone 1 scope: exercises the raw <code>Transport</code> interface
-      only. No protocol parsing, no scanner commands.
+      Exercises the SDK's <code>BioZoomScanner</code> API
+      (<code>connect</code> / <code>identify</code> / <code>disconnect</code>)
+      against real hardware. No measurement commands. See
+      <code>BIOZOOM_PROTOCOL_AND_IMPLEMENTATION.md</code> and
+      <code>docs/protocol.md</code>.
     </p>
-    <p>Status: <span id="status">disconnected</span></p>
+    <p>Status: <span id="status" data-state="disconnected">disconnected</span></p>
     <div id="controls">
       <button id="connect">Connect</button>
+      <button id="identify" disabled>Identify Scanner</button>
       <button id="disconnect" disabled>Disconnect</button>
-      <input id="text-input" type="text" placeholder="UTF-8 text to send" disabled />
-      <button id="send-text" disabled>Send Text</button>
       <button id="clear-log">Clear Log</button>
     </div>
-    <div id="log"></div>
+    <div id="error-banner"></div>
+
+    <section>
+      <h2>Identify Result</h2>
+      <dl>
+        <dt>Protocol Version</dt>
+        <dd id="protocol-version">—</dd>
+        <dt>Firmware Version</dt>
+        <dd id="firmware-version">—</dd>
+        <dt>Serial Number</dt>
+        <dd id="serial-number">—</dd>
+        <dt>Command Used</dt>
+        <dd id="command-used">—</dd>
+      </dl>
+      <h2 style="margin-top: 1rem">Raw Response</h2>
+      <div id="raw-response">Not yet identified.</div>
+    </section>
+
+    <section>
+      <h2>Log Output</h2>
+      <div id="log"></div>
+    </section>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

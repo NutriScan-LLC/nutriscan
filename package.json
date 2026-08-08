@@ -1,5 +1,5 @@
 {
-  "name": "nutriscan-biozoom",
+  "name": "nutriscan",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -7,8 +7,8 @@
     "apps/*"
   ],
   "scripts": {
-    "build": "npm run build --workspace packages/biozoom-sdk",
-    "test": "npm run test --workspace packages/biozoom-sdk",
+    "build": "npm run build --workspace packages/scanner-sdk",
+    "test": "npm run test --workspace packages/scanner-sdk",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "dev:scanner-test": "npm run dev --workspace apps/scanner-test"
   }
