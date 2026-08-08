@@ -8,11 +8,11 @@ authoritatively in `BIOZOOM_PROTOCOL_AND_IMPLEMENTATION.md`. Update it
 ## Status: transport + V2 protocol + minimal scanner API implemented
 
 Milestone 1 built the transport layer
-(`packages/scanner-sdk/src/transport`). Milestone 2 added the V2 protocol
-layer (`packages/scanner-sdk/src/protocol`): response framing, response
+(`packages/scanner/src/transport`). Milestone 2 added the V2 protocol
+layer (`packages/scanner/src/protocol`): response framing, response
 parsing, call-index correlation, command formatting, and version
 detection. Milestone 3 added a thin scanner-facing API
-(`packages/scanner-sdk/src/scanner`, `BioZoomScanner`) exposing only
+(`packages/scanner/src/scanner`, `BioZoomScanner`) exposing only
 `connect()`, `disconnect()`, and `identify()` — it introduces no new
 protocol knowledge, just composes Transport + ProtocolClient per the
 Phase 1 objective (discover/connect/disconnect/verify communication/
@@ -24,32 +24,32 @@ implemented yet — that's a later milestone.
 ```
 Transport   — raw bytes only. connect/disconnect/write/read/buffering/
               timeouts. No JSON, no command knowledge, no BioZoom framing.
-              (packages/scanner-sdk/src/transport)
+              (packages/scanner/src/transport)
 
 FrameReader — byte-oriented only. Splits a continuous stream on LF (0x0A).
               Does not touch content: no CR/0x80 stripping, no whitespace
               trimming, no UTF-8 decoding. Synchronous. Emits empty frames
               (adjacent LFs) unchanged.
-              (packages/scanner-sdk/src/protocol/frame.ts)
+              (packages/scanner/src/protocol/frame.ts)
 
 response.ts — turns one complete raw frame into a ParsedResponse. This is
               the ONLY place 0x80 stripping happens, followed by UTF-8
               decoding and JSON parsing. Every outcome (including every
               error outcome) carries the original raw bytes.
-              (packages/scanner-sdk/src/protocol/response.ts)
+              (packages/scanner/src/protocol/response.ts)
 
 ProtocolClient — command formatting + LF termination, call-index
               generation/correlation, the read loop (pulls from Transport
               via transport.read(), never transport.onData()), and V2
               version detection. No serial/browser APIs.
-              (packages/scanner-sdk/src/protocol/ProtocolClient.ts)
+              (packages/scanner/src/protocol/ProtocolClient.ts)
 
 BioZoomScanner — the public API surface UI code calls: connect(),
               disconnect(), identify(). Owns a ProtocolClient internally;
               takes a Transport by constructor injection so it stays
               platform-agnostic (Web Serial today, Electron/Node later).
               No measurement commands yet.
-              (packages/scanner-sdk/src/scanner/BioZoomScanner.ts)
+              (packages/scanner/src/scanner/BioZoomScanner.ts)
 ```
 
 Each layer only talks to the one below it. `ProtocolClient` depends on

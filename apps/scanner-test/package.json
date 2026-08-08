@@ -10,7 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@nutriscan/scanner-sdk": "*"
+    "@nutriscan/scanner": "*"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

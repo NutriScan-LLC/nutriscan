@@ -21,7 +21,7 @@ import {
   toHex,
   type ParsedResponse,
   type ScannerIdentity,
-} from '@nutriscan/scanner-sdk';
+} from '@nutriscan/scanner';
 
 const statusEl = document.querySelector<HTMLSpanElement>('#status')!;
 const errorBannerEl = document.querySelector<HTMLDivElement>('#error-banner')!;

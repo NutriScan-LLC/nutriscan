@@ -14,7 +14,7 @@ apps/
   scanner-test/       # Manual hardware testing application
 
 packages/
-  scanner-sdk/        # Hardware SDK
+  scanner/            # Hardware SDK
 
 docs/
   architecture.md
@@ -25,10 +25,10 @@ docs/
 Guidelines:
 
 - Customer-facing code belongs in apps/web.
-- Hardware communication belongs ONLY in packages/scanner-sdk.
+- Hardware communication belongs ONLY in packages/scanner.
 - apps/scanner-test is for manual hardware diagnostics and experimentation.
 - Never implement hardware protocol logic inside apps/web.
-- The web app should only consume the public API exposed by scanner-sdk.
+- The web app should only consume the public API exposed by scanner.
 
 ## Rules
 
@@ -47,11 +47,11 @@ Guidelines:
    that document as part of the same change, not after.
 
 4. **Keep transport, protocol, and UI separate.**
-   - `packages/scanner-sdk/src/transport` — raw bytes only. No JSON parsing,
+   - `packages/scanner/src/transport` — raw bytes only. No JSON parsing,
      no command knowledge, no BioZoom-specific framing.
-   - `packages/scanner-sdk/src/protocol` — command construction, response
+   - `packages/scanner/src/protocol` — command construction, response
      parsing, version detection, retries. No serial/browser APIs, no UI.
-   - `packages/scanner-sdk/src/scanner` — the public API surface UI code
+   - `packages/scanner/src/scanner` — the public API surface UI code
      calls. UI (including `apps/scanner-test`) must never send raw serial
      commands directly or import from `transport`/`protocol` internals.
 
@@ -64,8 +64,8 @@ Guidelines:
 ## Architecture Rules
 
 1. apps/web never communicates with WebUSB directly.
-2. apps/web only imports from @nutriscan/scanner-sdk.
-3. scanner-sdk owns all transport, protocol, and hardware abstractions.
+2. apps/web only imports from @nutriscan/scanner.
+3. scanner owns all transport, protocol, and hardware abstractions.
 4. scanner-test is the only application allowed to exercise low-level SDK functionality directly.
 5. Unknown protocol behavior must be documented in docs/unknowns.md before implementation.
 6. Confirmed protocol discoveries must update docs/protocol.md before code changes.

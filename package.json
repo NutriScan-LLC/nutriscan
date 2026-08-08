@@ -7,8 +7,8 @@
     "apps/*"
   ],
   "scripts": {
-    "build": "npm run build --workspace packages/scanner-sdk",
-    "test": "npm run test --workspace packages/scanner-sdk",
+    "build": "npm run build --workspace packages/scanner",
+    "test": "npm run test --workspace packages/scanner",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "dev:scanner-test": "npm run dev --workspace apps/scanner-test"
   }

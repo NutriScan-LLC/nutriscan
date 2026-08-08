@@ -1,9 +1,9 @@
 {
-  "name": "@nutriscan/scanner-sdk",
+  "name": "@nutriscan/scanner",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "SDK for communicating with BioZoom VitalityCheck scanners. Milestone 1: transport layer only.",
+  "description": "SDK for communicating with scanners. Milestone 1: transport layer only.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
