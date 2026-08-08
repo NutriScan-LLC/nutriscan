@@ -5,13 +5,18 @@ sense described by `CLAUDE.md`: verified against real hardware or stated
 authoritatively in `BIOZOOM_PROTOCOL_AND_IMPLEMENTATION.md`. Update it
 *before* changing any confirmed behavior in code, not after.
 
-## Status: transport + V2 framing/parsing/detection implemented
+## Status: transport + V2 protocol + minimal scanner API implemented
 
 Milestone 1 built the transport layer
 (`packages/biozoom-sdk/src/transport`). Milestone 2 added the V2 protocol
 layer (`packages/biozoom-sdk/src/protocol`): response framing, response
 parsing, call-index correlation, command formatting, and version
-detection. Measurement (`measureAOX`) and flash download are not
+detection. Milestone 3 added a thin scanner-facing API
+(`packages/biozoom-sdk/src/scanner`, `BioZoomScanner`) exposing only
+`connect()`, `disconnect()`, and `identify()` — it introduces no new
+protocol knowledge, just composes Transport + ProtocolClient per the
+Phase 1 objective (discover/connect/disconnect/verify communication/
+identify firmware). Measurement (`measureAOX`) and flash download are not
 implemented yet — that's a later milestone.
 
 ## Layer boundaries
@@ -38,6 +43,13 @@ ProtocolClient — command formatting + LF termination, call-index
               via transport.read(), never transport.onData()), and V2
               version detection. No serial/browser APIs.
               (packages/biozoom-sdk/src/protocol/ProtocolClient.ts)
+
+BioZoomScanner — the public API surface UI code calls: connect(),
+              disconnect(), identify(). Owns a ProtocolClient internally;
+              takes a Transport by constructor injection so it stays
+              platform-agnostic (Web Serial today, Electron/Node later).
+              No measurement commands yet.
+              (packages/biozoom-sdk/src/scanner/BioZoomScanner.ts)
 ```
 
 Each layer only talks to the one below it. `ProtocolClient` depends on
