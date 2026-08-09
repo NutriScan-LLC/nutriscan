@@ -10,6 +10,13 @@
     "build": "npm run build --workspace packages/scanner",
     "test": "npm run test --workspace packages/scanner",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "dev:scanner-test": "npm run dev --workspace apps/scanner-test"
+    "dev:web": "npm run dev --workspace @nutriscan/web",
+    "dev:scanner-test": "npm run dev --workspace apps/scanner-test",
+    "scanner:ports": "npm run start --workspace apps/scanner-cli -- list",
+    "scanner:diag": "npm run start --workspace apps/scanner-cli --",
+    "scoring:compare": "npm run start --workspace apps/scoring-contract --",
+    "scoring:pre-request": "npm run pre-request --workspace @nutriscan/scoring --",
+    "scoring:submit-m35": "npm run submit-m35 --workspace @nutriscan/scoring --",
+    "scoring:paired-m35": "npm run paired-m35 --workspace @nutriscan/scoring --"
   }
 }

@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  transpilePackages: [
+    "@nutriscan/scanner",
+    "@nutriscan/scoring",
+    "@nutriscan/workflows",
+  ],
 };
 
 export default nextConfig;
