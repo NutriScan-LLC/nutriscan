@@ -4,6 +4,8 @@ import {
   buildPrecisionAoxPreRequestUrl,
   createPrecisionAoxPreRequestGateway,
 } from "./server-pre-request";
+import { buildPrecisionAoxScoringRequest } from "@nutriscan/scoring/quick-aox";
+import { createPrecisionAoxServerGateway } from "./server-gateway";
 
 const successfulFixture = {
   new_pre_request_req: false,
@@ -105,4 +107,63 @@ describe("Precision AOX pre-request-only diagnostic", () => {
     expect(init?.body).toBe(JSON.stringify({ scannerSerial: "PRIVATE-SERIAL" }));
     expect(String(init?.body)).not.toContain("MeasurementBlocks");
   });
+
+  it("routes final submission through NutriScan with empty MeasurementBlocks and receiver-safe fetch", async () => {
+    const request = precisionRequest();
+    const fetchImplementation = vi.fn(function (this: unknown, _url: RequestInfo | URL, _init?: RequestInit) {
+      void _url;
+      void _init;
+      expect(this).toBe(globalThis);
+      return Promise.resolve(Response.json({ precise_aox: 5.1 }));
+    }) as typeof fetch;
+    const gateway = new NutriScanPrecisionPreRequestGateway(fetchImplementation);
+    await gateway.submit({ scannerSerial: "2NTEST", recommendedServer: "https://de2.biozoom.net", scoringRequest: request });
+    const [url, init] = vi.mocked(fetchImplementation).mock.calls[0]!;
+    expect(url).toBe('/api/precision-aox/submit');
+    const browserBody = JSON.parse(String(init?.body));
+    expect(browserBody.scoringRequest.measureJson.MeasurementBlocks).toBe('');
+    expect(String(init?.body)).not.toContain('official-shaped-payload');
+  });
+
+  it("server submission uses one measure_type=1 multipart request and validates the response", async () => {
+    const upstreamFetch = vi.fn<typeof fetch>().mockResolvedValue(Response.json({
+      precise_aox: 5.1, precise_aox_std: 0.2, precise_quality_result: 999,
+    }));
+    const gateway = createPrecisionAoxServerGateway({
+      preRequestBaseUrl: 'https://de2.biozoom.net', requestId: 'safe-reference', fetchImplementation: upstreamFetch,
+    });
+    await expect(gateway.submit({
+      scannerSerial: '2NTEST', recommendedServer: 'https://de2.biozoom.net', scoringRequest: precisionRequest(),
+    })).resolves.toMatchObject({ precise_aox: 5.1 });
+    expect(upstreamFetch).toHaveBeenCalledOnce();
+    const [url, init] = upstreamFetch.mock.calls[0]!;
+    expect(url).toBe('https://de2.biozoom.net/measure/?serial_id=2NTEST&measure_type=1');
+    expect(init?.method).toBe('POST');
+    const form = init?.body as FormData;
+    const file = form.get('measure_json') as File;
+    const sent = JSON.parse(await file.text());
+    expect(sent.MeasurementBlocks).toBe('');
+  });
+
+  it("server submission returns sanitized diagnostics for non-JSON and invalid Precision responses without retry", async () => {
+    for (const [response, diagnosticCode] of [
+      [new Response('private body', { status: 200 }), 'UPSTREAM_NON_JSON'],
+      [Response.json({ precise_aox: 'private-invalid' }), 'UPSTREAM_INVALID_PRECISION_RESPONSE'],
+    ] as const) {
+      const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(response);
+      const gateway = createPrecisionAoxServerGateway({ preRequestBaseUrl: 'https://de2.biozoom.net', requestId: 'safe-reference', fetchImplementation });
+      await expect(gateway.submit({ scannerSerial: '2NTEST', recommendedServer: 'https://de2.biozoom.net', scoringRequest: precisionRequest() }))
+        .rejects.toMatchObject({ diagnosticCode, requestId: 'safe-reference' });
+      expect(fetchImplementation).toHaveBeenCalledOnce();
+    }
+  });
 });
+
+function precisionRequest() {
+  return buildPrecisionAoxScoringRequest({
+    scannerSerial: '2NTEST', language: 'EN', requestUuid: '20000000-0000-4000-8000-000000000000', expectedMeasurementCount: 4,
+    series: [1, 2, 3, 4].map((value) => ({
+      normalizedAox: value, aoxQ: 40, responseUuid: `10000000-0000-4000-8000-00000000000${value}`,
+    })),
+  });
+}

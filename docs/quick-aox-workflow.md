@@ -86,15 +86,18 @@ Cancellation checkpoints occur before and between scanner operations and
 through acquisition, waiting, and scoring. A cancelled outcome records its
 phase and `physicalMeasurementStarted`.
 
-It also records `physicalMeasurementMayHaveStarted` once the start method has
-been invoked. This remains true if acknowledgment is lost, because software
-cannot prove whether the scanner acted on a transmitted command.
+It records `physicalMeasurementMayHaveStarted` only when the measurement
+command is about to be transmitted—not when routine bare-delete preparation
+begins. This remains true if the measurement acknowledgment is lost, because
+software cannot prove whether the scanner acted on a transmitted command.
 
 When `physicalMeasurementStarted` is true, cancellation means software work
 stopped. It does not claim physical acquisition stopped. No guessed stop command
-exists. The workflow never automatically rescans and never sends or requests
-delete, erase-chip, firmware, restart/reset, destructive, or mode-changing
-commands.
+exists. The workflow never automatically rescans. Its one normal
+state-changing preparation operation is the APK-confirmed bare `delete` before
+each physical AOX measurement. Its exact firmware-side scope is unknown. No
+`erase-chip`, `e`, `flash_erase`, firmware, restart/reset, or mode-changing
+command is reachable from this production path.
 
 By default it disconnects in `finally`; disconnect closes communication and is
 not represented as stopping physical activity. Long-lived connection owners may

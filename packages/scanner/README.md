@@ -42,9 +42,12 @@ try {
 ```
 
 `startAoxMeasurement()` requires an active scanner already identified as V2,
-sends exactly one `measure?type=aox`, validates the confirmed acknowledgment
-fields, and preserves the complete parsed response. It never deletes, erases,
-polls, downloads, or contacts a server.
+sends exactly one APK-style bare `delete`, waits for its strictly correlated
+acknowledgment (at most 10 seconds), then sends exactly one
+`measure?type=aox`. It validates the confirmed measurement acknowledgment and
+preserves the complete parsed response. The firmware-side scope of `delete`
+remains unknown. This path never retries preparation, performs a full-flash
+erase, polls, downloads, or contacts a server.
 
 `downloadAoxMeasurement()` uses bounded `read-flash` requests, validates and
 orders blocks, retries only missing ranges, and returns an explicit incomplete
@@ -63,8 +66,9 @@ Scanner `2N2400A5B70F5E3C9251` with sensor firmware 608 and Nuvoton firmware
   index, and CRC16-CCITT residual zero over bytes 2 through end;
 - the first two logical blocks both carry internal index 1;
 - temporary or boundary all-FF values are not valid measurement blocks;
-- a fresh measurement can be completely retrieved without `delete` or
-  `erase-chip`.
+- one APK-style bare `delete` restored physical AOX acquisition after the
+  scanner acknowledged `measure?type=aox` without beginning acquisition;
+- full-flash operations were not required.
 
 ## Configurable; not proven universal
 

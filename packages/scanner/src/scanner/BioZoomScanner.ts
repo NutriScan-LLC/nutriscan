@@ -25,6 +25,8 @@ export interface BioZoomScannerOptions {
   protocol?: ProtocolClientOptions;
 }
 
+export const APK_BARE_DELETE_RESPONSE_TIMEOUT_MS = 10_000;
+
 /**
  * Result of identify(). Only fields confirmed by BIOZOOM_PROTOCOL_AND_IMPLEMENTATION.md
  * are pulled out; `response` carries the full parsed frame so nothing
@@ -159,12 +161,44 @@ export class BioZoomScanner {
   }
 
   /**
-   * Starts one hardware-confirmed full AOX measurement and returns its assigned
-   * number with the complete acknowledgment. It never deletes, erases, polls,
-   * downloads, or invokes server processing.
+   * Captures one strictly correlated, non-destructive V2 status response.
+   * It does not measure, recognize a hand, read flash, poll, retry, or mutate
+   * scanner state. Callers are responsible for privacy-safe presentation.
    */
-  async startAoxMeasurement(): Promise<AoxMeasurementStart> {
+  async readStatusSnapshot(): Promise<ParsedResponse> {
     this.#requireIdentifiedV2();
+    return this.#protocol.sendCommand('status', undefined, { requireCallIndex: true });
+  }
+
+  /**
+   * Permissioned diagnostic primitive: sends exactly one APK-confirmed bare
+   * `delete` command with strict V2 call-index correlation. The scanner-side
+   * deletion scope is unknown. This method does not poll, retry, measure,
+   * recognize a hand, read flash, or send any other command.
+   */
+  async deleteMeasurementStorageOnceDiagnostic(): Promise<ParsedResponse> {
+    this.#requireIdentifiedV2();
+    return this.#deleteMeasurementStorageOnce();
+  }
+
+  /**
+   * Starts one hardware-confirmed full AOX measurement and returns its assigned
+   * number with the complete acknowledgment. APK-confirmed routine preparation
+   * sends one bare delete first; its firmware-side scope remains unknown. This
+   * path never performs a full-flash erase, polls, retries, downloads, or
+   * invokes server processing.
+   */
+  async startAoxMeasurement(options: {
+    readonly signal?: AbortSignal;
+    readonly onMeasurementCommandSent?: () => void;
+  } = {}): Promise<AoxMeasurementStart> {
+    this.#requireIdentifiedV2();
+    throwIfAborted(options.signal);
+    await this.#deleteMeasurementStorageOnce();
+    // A delete already acknowledged by the scanner cannot be undone. This
+    // gate guarantees cancellation never proceeds into physical acquisition.
+    throwIfAborted(options.signal);
+    try { options.onMeasurementCommandSent?.(); } catch { /* metadata observers cannot alter command sequencing */ }
     const acknowledgment = await this.#protocol.sendCommand('measure', { type: 'aox' }, { requireCallIndex: true });
     if (acknowledgment.kind === 'error') throw new AoxMeasurementStartRejectedError(acknowledgment);
     const measurementNumber = acknowledgment.kind === 'ok' ? acknowledgment.json.measurement_nr : undefined;
@@ -182,6 +216,13 @@ export class BioZoomScanner {
       commandName: 'measure',
       correlated: true,
     };
+  }
+
+  async #deleteMeasurementStorageOnce(): Promise<ParsedResponse> {
+    return this.#protocol.sendCommand('delete', undefined, {
+      requireCallIndex: true,
+      responseTimeoutMs: APK_BARE_DELETE_RESPONSE_TIMEOUT_MS,
+    });
   }
 
   /**
@@ -563,4 +604,9 @@ function isAoxMeasureCommand(command: string | undefined): boolean {
   if (!command) return false;
   const [name, query = ''] = command.split('?');
   return name === 'measure' && new URLSearchParams(query).get('type') === 'aox';
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  throw signal.reason ?? new DOMException('The operation was aborted', 'AbortError');
 }

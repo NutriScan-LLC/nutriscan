@@ -25,14 +25,51 @@ export interface ProtocolClientOptions {
   pollTimeoutMs?: number;
   /** Forwarded to the internal FrameReader. */
   maxFrameBufferSize?: number;
+  /** Sanitized, metadata-only observation hook. Never receives bytes or response bodies. */
+  diagnosticObserver?: (event: ProtocolDiagnosticEvent) => void;
 }
+
+export type ProtocolDiagnosticEvent =
+  | {
+      readonly kind: 'command-sent';
+      readonly timestamp: string;
+      readonly commandName: string;
+      readonly callIndex: string;
+      readonly measurementNumber?: number;
+    }
+  | {
+      readonly kind: 'frame-during-read-flash';
+      readonly timestamp: string;
+      readonly commandName?: string;
+      readonly callIndexExists: boolean;
+      readonly callIndexMatches: boolean;
+      readonly parsingSucceeded: boolean;
+    }
+  | {
+      readonly kind: 'correlated-response';
+      readonly timestamp: string;
+      readonly commandName: string;
+      readonly callIndex: string;
+      readonly measurementNumber?: number;
+    }
+  | {
+      readonly kind: 'command-timeout';
+      readonly timestamp: string;
+      readonly commandName: string;
+      readonly callIndex: string;
+      readonly anyFrameArrivedDuringPending: boolean;
+      readonly measurementNumber?: number;
+    };
 
 interface PendingRequest {
   callIndex: string;
+  commandName: string;
   resolve: (frame: ParsedResponse) => void;
   reject: (err: Error) => void;
   timer: ReturnType<typeof setTimeout>;
   requireCallIndex: boolean;
+  frameArrived: boolean;
+  measurementNumber?: number;
 }
 
 const DEFAULT_RESPONSE_TIMEOUT_MS = 5_000;
@@ -63,6 +100,7 @@ export class ProtocolClient {
   readonly #errorListeners = new Set<ErrorListener>();
   readonly #responseTimeoutMs: number;
   readonly #pollTimeoutMs: number;
+  readonly #diagnosticObserver: ((event: ProtocolDiagnosticEvent) => void) | undefined;
 
   #running = false;
   #loopPromise: Promise<void> | null = null;
@@ -73,6 +111,7 @@ export class ProtocolClient {
     this.#transport = transport;
     this.#responseTimeoutMs = options.responseTimeoutMs ?? DEFAULT_RESPONSE_TIMEOUT_MS;
     this.#pollTimeoutMs = options.pollTimeoutMs ?? DEFAULT_POLL_TIMEOUT_MS;
+    this.#diagnosticObserver = options.diagnosticObserver;
 
     const frameReaderOptions: FrameReaderOptions = {};
     if (options.maxFrameBufferSize !== undefined) frameReaderOptions.maxBufferSize = options.maxFrameBufferSize;
@@ -167,6 +206,17 @@ export class ProtocolClient {
     if (!pending) return; // No caller is waiting — onFrame listeners already saw it.
 
     const callIndex = frame.kind === 'ok' || frame.kind === 'error' ? frame.callIndex : undefined;
+    if (pending.commandName === 'read-flash') {
+      pending.frameArrived = true;
+      this.#observe({
+        kind: 'frame-during-read-flash',
+        timestamp: new Date().toISOString(),
+        ...((frame.kind === 'ok' || frame.kind === 'error') && frame.command !== undefined ? { commandName: commandNameOnly(frame.command) } : {}),
+        callIndexExists: callIndex !== undefined,
+        callIndexMatches: callIndex === pending.callIndex,
+        parsingSucceeded: frame.kind === 'ok' || frame.kind === 'error',
+      });
+    }
     if (callIndex !== undefined && callIndex !== pending.callIndex) return;
     if (callIndex === undefined && pending.requireCallIndex) {
       // Strict production commands ignore unrelated call-index-less frames.
@@ -176,6 +226,13 @@ export class ProtocolClient {
     // A frame with no resolvable call-index is treated as a match by
     // default — confirmed hardware shows get_status's error response
     // carries no call-index anywhere. See docs/unknowns.md.
+    this.#observe({
+      kind: 'correlated-response',
+      timestamp: new Date().toISOString(),
+      commandName: pending.commandName,
+      callIndex: pending.callIndex,
+      ...measurementNumberFromFrame(frame),
+    });
     this.#settlePending((p) => p.resolve(frame));
   }
 
@@ -199,10 +256,12 @@ export class ProtocolClient {
   async sendCommand(
     name: string,
     params?: Record<string, string>,
-    options: { readonly requireCallIndex?: boolean } = {},
+    options: { readonly requireCallIndex?: boolean; readonly responseTimeoutMs?: number } = {},
   ): Promise<ParsedResponse> {
     if (!this.#running) throw new ProtocolNotStartedError();
-    const task = this.#writeQueue.then(() => this.#sendCommandExclusive(name, params, options.requireCallIndex ?? false));
+    const responseTimeoutMs = options.responseTimeoutMs ?? this.#responseTimeoutMs;
+    if (!Number.isFinite(responseTimeoutMs) || responseTimeoutMs <= 0) throw new RangeError('responseTimeoutMs must be positive and finite');
+    const task = this.#writeQueue.then(() => this.#sendCommandExclusive(name, params, options.requireCallIndex ?? false, responseTimeoutMs));
     this.#writeQueue = task.then(
       () => undefined,
       () => undefined,
@@ -210,30 +269,49 @@ export class ProtocolClient {
     return task;
   }
 
-  async #sendCommandExclusive(name: string, params: Record<string, string> | undefined, requireCallIndex: boolean): Promise<ParsedResponse> {
+  async #sendCommandExclusive(name: string, params: Record<string, string> | undefined, requireCallIndex: boolean, responseTimeoutMs: number): Promise<ParsedResponse> {
     const callIndex = generateCallIndex();
     const line = formatCommandLine(name, params, callIndex);
 
     const responsePromise = new Promise<ParsedResponse>((resolve, reject) => {
       this.#pending = {
         callIndex,
+        commandName: name,
         resolve,
         reject,
         timer: setTimeout(() => {
-          this.#settlePending((p) =>
+          this.#settlePending((p) => {
+            this.#observe({
+              kind: 'command-timeout', timestamp: new Date().toISOString(), commandName: p.commandName,
+              callIndex: p.callIndex, anyFrameArrivedDuringPending: p.frameArrived,
+              ...(p.measurementNumber === undefined ? {} : { measurementNumber: p.measurementNumber }),
+            });
             p.reject(
               new ProtocolResponseTimeoutError(
-                `No response to "${name}" (call-index ${p.callIndex}) within ${this.#responseTimeoutMs}ms`,
+                `No response to "${name}" (call-index ${p.callIndex}) within ${responseTimeoutMs}ms`,
               ),
-            ),
-          );
-        }, this.#responseTimeoutMs),
+            );
+          });
+        }, responseTimeoutMs),
         requireCallIndex,
+        frameArrived: false,
+        ...measurementNumberFromParams(params),
       };
     });
 
     await this.#transport.writeText(`${line}\n`);
+    this.#observe({
+      kind: 'command-sent',
+      timestamp: new Date().toISOString(),
+      commandName: name,
+      callIndex,
+      ...measurementNumberFromParams(params),
+    });
     return responsePromise;
+  }
+
+  #observe(event: ProtocolDiagnosticEvent): void {
+    try { this.#diagnosticObserver?.(event); } catch { /* diagnostics never affect protocol behavior */ }
   }
 
   /**
@@ -262,6 +340,22 @@ export class ProtocolClient {
 
     return { version: 'v2', commandUsed, response: finalResponse, getStatusResponse };
   }
+}
+
+function commandNameOnly(command: string): string {
+  return command.split('?')[0] ?? command;
+}
+
+function measurementNumberFromParams(params: Record<string, string> | undefined): { measurementNumber?: number } {
+  const value = params?.nr;
+  const parsed = value === undefined ? NaN : Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? { measurementNumber: parsed } : {};
+}
+
+function measurementNumberFromFrame(frame: ParsedResponse): { measurementNumber?: number } {
+  if (frame.kind !== 'ok' && frame.kind !== 'error') return {};
+  const value = frame.json.measurement_nr;
+  return Number.isSafeInteger(value) && (value as number) > 0 ? { measurementNumber: value as number } : {};
 }
 
 function hasCommandField(response: ParsedResponse): boolean {

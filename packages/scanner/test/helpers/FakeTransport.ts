@@ -14,6 +14,8 @@ export class FakeTransport implements Transport {
 
   readonly writes: Uint8Array[] = [];
   readonly writtenText: string[] = [];
+  activeReadCount = 0;
+  maxConcurrentReadCount = 0;
 
   get isConnected(): boolean {
     return this.#connected;
@@ -45,25 +47,31 @@ export class FakeTransport implements Transport {
 
   async read(timeoutMs?: number): Promise<Uint8Array> {
     if (!this.#connected) throw new TransportNotConnectedError();
-    if (this.#queue.length > 0) return this.#drain();
+    this.activeReadCount++;
+    this.maxConcurrentReadCount = Math.max(this.maxConcurrentReadCount, this.activeReadCount);
+    try {
+      if (this.#queue.length > 0) return this.#drain();
 
-    return new Promise<Uint8Array>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.#waiter = null;
-        reject(new TransportTimeoutError());
-      }, timeoutMs ?? 5000);
+      return await new Promise<Uint8Array>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          this.#waiter = null;
+          reject(new TransportTimeoutError());
+        }, timeoutMs ?? 5000);
 
-      this.#waiter = {
-        resolve: () => {
-          clearTimeout(timer);
-          resolve(this.#drain());
-        },
-        reject: (err) => {
-          clearTimeout(timer);
-          reject(err);
-        },
-      };
-    });
+        this.#waiter = {
+          resolve: () => {
+            clearTimeout(timer);
+            resolve(this.#drain());
+          },
+          reject: (err) => {
+            clearTimeout(timer);
+            reject(err);
+          },
+        };
+      });
+    } finally {
+      this.activeReadCount--;
+    }
   }
 
   #drain(): Uint8Array {

@@ -4,6 +4,7 @@ export {
   type FrameListener,
   type ErrorListener,
   type V2DetectionResult,
+  type ProtocolDiagnosticEvent,
 } from './ProtocolClient.js';
 export { FrameReader, type FrameReaderOptions } from './frame.js';
 export {

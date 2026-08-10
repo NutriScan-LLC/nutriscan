@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ProtocolClient } from '../../src/protocol/ProtocolClient.js';
+import type { ProtocolDiagnosticEvent } from '../../src/protocol/ProtocolClient.js';
 import {
   FrameTooLargeError,
   ProtocolDetectionError,
@@ -178,6 +179,69 @@ describe('ProtocolClient', () => {
   });
 
   describe('timeout and disconnect propagation', () => {
+    it('supports a one-command delete timeout override and emits only sanitized metadata', async () => {
+      const events: ProtocolDiagnosticEvent[] = [];
+      const client = new ProtocolClient(transport, { pollTimeoutMs: 5, responseTimeoutMs: 500, diagnosticObserver: (event) => events.push(event) });
+      client.start();
+      await expect(client.sendCommand('delete', undefined, {
+        requireCallIndex: true,
+        responseTimeoutMs: 20,
+      })).rejects.toThrow('within 20ms');
+      expect(events.map((event) => event.kind)).toEqual(['command-sent', 'command-timeout']);
+      expect(events.at(-1)).toMatchObject({ commandName: 'delete', anyFrameArrivedDuringPending: false });
+      expect(JSON.stringify(events)).not.toContain('response');
+      await client.stop();
+    });
+
+    it('states explicitly when no frame arrived during a timed-out read-flash', async () => {
+      const events: ProtocolDiagnosticEvent[] = [];
+      const client = new ProtocolClient(transport, { pollTimeoutMs: 5, responseTimeoutMs: 25, diagnosticObserver: (event) => events.push(event) });
+      client.start();
+      await expect(client.sendCommand('read-flash', { nr: '42', block: '0', range: '150' }, { requireCallIndex: true })).rejects.toBeInstanceOf(ProtocolResponseTimeoutError);
+      expect(events.at(-1)).toMatchObject({ kind: 'command-timeout', commandName: 'read-flash', measurementNumber: 42, anyFrameArrivedDuringPending: false });
+      await client.stop();
+    });
+
+    it('creates exactly one protocol read loop after stop and reconnect', async () => {
+      const client = new ProtocolClient(transport, { pollTimeoutMs: 5 });
+      client.start();
+      client.start();
+      await flushMicrotasks();
+      expect(transport.maxConcurrentReadCount).toBe(1);
+      await client.stop();
+      await transport.connect();
+      client.start();
+      client.start();
+      await flushMicrotasks();
+      expect(transport.maxConcurrentReadCount).toBe(1);
+      await client.stop();
+    });
+
+    it('records only sanitized metadata for frames seen during a pending read-flash', async () => {
+      const events: ProtocolDiagnosticEvent[] = [];
+      const client = new ProtocolClient(transport, { pollTimeoutMs: 5, responseTimeoutMs: 100, diagnosticObserver: (event) => events.push(event) });
+      client.start();
+      const pending = client.sendCommand('read-flash', { nr: '42', block: '0', range: '150' }, { requireCallIndex: true });
+      await flushMicrotasks();
+      const expected = callIndexFromWrite(transport);
+      transport.pushIncoming(encode('{not-json}\n'));
+      await flushMicrotasks();
+      transport.pushIncoming(encode('{"command":"status","call-index":"wrong"}\n'));
+      await flushMicrotasks();
+      transport.pushIncoming(encode(`{"command":"read-flash","call-index":"${expected}","data":[]}\n`));
+      await expect(pending).resolves.toMatchObject({ kind: 'ok' });
+      expect(events).toEqual([
+        expect.objectContaining({ kind: 'command-sent', commandName: 'read-flash', callIndex: expected, measurementNumber: 42 }),
+        expect.objectContaining({ kind: 'frame-during-read-flash', parsingSucceeded: false, callIndexExists: false, callIndexMatches: false }),
+        expect.objectContaining({ kind: 'frame-during-read-flash', commandName: 'status', parsingSucceeded: true, callIndexExists: true, callIndexMatches: false }),
+        expect.objectContaining({ kind: 'frame-during-read-flash', commandName: 'read-flash', parsingSucceeded: true, callIndexExists: true, callIndexMatches: true }),
+        expect.objectContaining({ kind: 'correlated-response', commandName: 'read-flash', callIndex: expected }),
+      ]);
+      expect(JSON.stringify(events)).not.toContain('data');
+      expect(JSON.stringify(events)).not.toContain('not-json');
+      await client.stop();
+    });
+
     it('rejects sendCommand with ProtocolResponseTimeoutError when nothing answers in time', async () => {
       const client = new ProtocolClient(transport, { pollTimeoutMs: 10, responseTimeoutMs: 30 });
       client.start();

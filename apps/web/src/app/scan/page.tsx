@@ -13,6 +13,10 @@ import {
   SunIcon,
 } from "@/components/icons";
 import { useQuickAoxRun } from "@/lib/quick-aox/run-context";
+import { usePrecisionAoxRun } from "@/lib/precision-aox/run-context";
+import { handoffScannerSession } from "@/lib/scan-session-handoff";
+
+type ScanType = "quick" | "precision";
 
 const INSTRUCTIONS = [
   {
@@ -40,13 +44,34 @@ const INSTRUCTIONS = [
 export default function ScanInstructionsPage() {
   const router = useRouter();
   const [agreed, setAgreed] = useState(false);
-  const { event, running, beginScan } = useQuickAoxRun();
-  const ready = running && event?.state === "awaiting-begin";
+  const [scanType, setScanType] = useState<ScanType | null>(null);
+  const [switching, setSwitching] = useState(false);
+  const { event, running, beginScan, releaseConnection } = useQuickAoxRun();
+  const precision = usePrecisionAoxRun();
+  const quickReady = running && event?.state === "awaiting-begin";
+  const precisionReady = precision.running && precision.event?.state === "constituent-progress" && precision.event.event.state === "awaiting-begin";
+  const ready = scanType === "quick" ? quickReady : scanType === "precision" ? precisionReady : false;
+
+  async function selectPrecision() {
+    if (scanType || switching) return;
+    setSwitching(true);
+    setScanType("precision");
+    await handoffScannerSession(releaseConnection, () => {
+      precision.clearCompletedRun();
+      precision.startRun();
+    });
+    setSwitching(false);
+  }
 
   function handleContinue() {
-    if (!ready) return;
-    beginScan();
-    router.push("/scan/in-progress");
+    if (!ready || !scanType) return;
+    if (scanType === "quick") {
+      beginScan();
+      router.push("/scan/in-progress");
+    } else {
+      precision.beginMeasurement();
+      router.push("/scan/precision/in-progress");
+    }
   }
 
   return (
@@ -104,16 +129,27 @@ export default function ScanInstructionsPage() {
           </div>
         </div>
 
-        <div className="mt-6 flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white">
-            <SparkleIcon className="h-4.5 w-4.5" />
-          </span>
-          <div>
-            <p className="text-sm font-semibold text-slate-900">Quick AOX scan</p>
-            <p className="mt-0.5 text-xs leading-relaxed text-slate-600">
-              Begin the scan, then place your hand on the scanner when prompted.
-            </p>
+        <div className="mt-6">
+          <p className="text-sm font-semibold text-slate-900">Choose your scan type</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <ScanTypeButton
+              selected={scanType === "quick"}
+              disabled={scanType !== null && scanType !== "quick"}
+              title="Quick AOX scan"
+              detail="One measurement for a fast result."
+              onClick={() => setScanType("quick")}
+            />
+            <ScanTypeButton
+              selected={scanType === "precision"}
+              disabled={scanType !== null && scanType !== "precision"}
+              title="Precision Scan"
+              detail="Four accepted measurements combined by BioZoom."
+              onClick={() => void selectPrecision()}
+            />
           </div>
+          {scanType === "precision" && !precisionReady && (
+            <p className="mt-3 text-center text-xs text-slate-500">Preparing the authorized scanner for Precision…</p>
+          )}
         </div>
 
         <label className="mt-6 flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4">
@@ -124,20 +160,44 @@ export default function ScanInstructionsPage() {
             className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-emerald-700 focus:ring-emerald-600"
           />
           <span className="text-sm leading-relaxed text-slate-600">
-            I understand how to perform the scan.
+            I understand how to perform the selected scan.
           </span>
         </label>
 
         <button
           type="button"
-          disabled={!agreed || !ready}
+          disabled={!agreed || !ready || switching}
           onClick={handleContinue}
           className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full bg-emerald-700 px-6 py-3.5 text-base font-semibold text-white shadow-sm ring-1 ring-emerald-700/10 transition-all hover:bg-emerald-800 hover:shadow-md disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none disabled:ring-0"
         >
-          Begin scan
+          {scanType === "precision" ? "Begin Precision Scan" : scanType === "quick" ? "Begin Quick AOX scan" : "Select a scan type"}
           <ArrowRightIcon className="h-4 w-4" />
         </button>
       </motion.div>
     </div>
+  );
+}
+
+function ScanTypeButton({ selected, disabled, title, detail, onClick }: {
+  selected: boolean;
+  disabled: boolean;
+  title: string;
+  detail: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      disabled={disabled}
+      onClick={onClick}
+      className={"flex items-start gap-3 rounded-2xl border p-4 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 " +
+        (selected ? "border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500" : "border-slate-200 bg-white hover:border-emerald-300")}
+    >
+      <span className={"mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full " + (selected ? "bg-emerald-600 text-white" : "bg-emerald-50 text-emerald-700")}>
+        <SparkleIcon className="h-4.5 w-4.5" />
+      </span>
+      <span><span className="block text-sm font-semibold text-slate-900">{title}</span><span className="mt-1 block text-xs leading-relaxed text-slate-600">{detail}</span></span>
+    </button>
   );
 }

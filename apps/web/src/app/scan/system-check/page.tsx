@@ -13,12 +13,15 @@ import {
 } from "@/components/icons";
 import ScannerLayout from "@/components/scan/ScannerLayout";
 import { useQuickAoxRun } from "@/lib/quick-aox/run-context";
+import { usePrecisionAoxRun } from "@/lib/precision-aox/run-context";
+import { handoffScannerSession } from "@/lib/scan-session-handoff";
 
 type CheckStatus = "pending" | "checking" | "success" | "failure";
 
 export default function ScanSystemCheckPage() {
   const router = useRouter();
   const { capability, event, outcome, running, startRun, clearCompletedRun } = useQuickAoxRun();
+  const { releaseConnection: releasePrecisionConnection } = usePrecisionAoxRun();
   const identified = event?.state === "awaiting-begin";
 
   useEffect(() => {
@@ -35,9 +38,11 @@ export default function ScanSystemCheckPage() {
       ? "failure"
       : running ? "checking" : "pending";
 
-  function connect() {
-    clearCompletedRun();
-    startRun();
+  async function connect() {
+    await handoffScannerSession(releasePrecisionConnection, () => {
+      clearCompletedRun();
+      startRun();
+    });
   }
 
   return (
@@ -47,7 +52,7 @@ export default function ScanSystemCheckPage() {
       description="NutriScan uses Web Serial to connect securely to your scanner."
       primaryAction={{
         label: running ? "Connecting to scanner…" : "Connect scanner",
-        onClick: connect,
+        onClick: () => void connect(),
         disabled: capability !== "supported" || running,
       }}
     >

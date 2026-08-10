@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { ChevronLeftIcon } from "@/components/icons";
 import ScanStepper from "@/components/scan/ScanStepper";
 import { useQuickAoxRun } from "@/lib/quick-aox/run-context";
+import { usePrecisionAoxRun } from "@/lib/precision-aox/run-context";
 
 // Shared chrome for the whole scanner flow: Welcome → System Check →
 // Instructions → Scan → Processing → Results. This is the ONLY navigation
@@ -16,9 +17,11 @@ import { useQuickAoxRun } from "@/lib/quick-aox/run-context";
 export default function ScanLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { cancel } = useQuickAoxRun();
+  const { cancel: cancelPrecision } = usePrecisionAoxRun();
 
   function exitScan() {
     cancel();
+    cancelPrecision();
     router.push("/");
   }
 

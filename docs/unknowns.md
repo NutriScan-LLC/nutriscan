@@ -1,5 +1,19 @@
 # Unresolved Protocol Questions
 
+## Precision AOX production merge
+
+- The NutriScan `measure_type=1` pre-request is runtime-confirmed, but the final
+  Precision `/measure/` submission has not yet been performed live.
+- It remains unknown whether the production service requires any APK optional
+  metadata beyond the recovered minimum series contract. NutriScan currently
+  omits app impersonation/config/log/license fields rather than inventing them.
+- Server formulas and any acceptance meaning for `precise_aox_std`,
+  `precise_measurements_std`, `precise_quality_hand`, and
+  `precise_quality_result` remain unknown. Values are preserved without policy.
+- The APK-bundled fallback is four measurements; downloaded customer design may
+  configure another count. NutriScan exposes the count as workflow configuration
+  and initially selects four.
+
 Tracks behavior that is not yet confirmed against real hardware. Per
 `CLAUDE.md`, nothing here should be treated as fact until it's verified and
 promoted into `docs/protocol.md`. Add to this list rather than guessing.

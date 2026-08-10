@@ -9,7 +9,7 @@ import ScannerLayout from "@/components/scan/ScannerLayout";
 // on the marketing page ("about 2 minutes, non-invasive, track progress")
 // carries through into the flow instead of being restated differently here.
 const BENEFITS = [
-  { icon: ClockIcon, label: "About 2 minutes" },
+  { icon: ClockIcon, label: "Guided step by step" },
   { icon: NonInvasiveIcon, label: "Non-invasive" },
   { icon: TrendUpIcon, label: "Track progress over time" },
 ];

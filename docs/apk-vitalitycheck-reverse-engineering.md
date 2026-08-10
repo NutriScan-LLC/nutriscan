@@ -32,6 +32,13 @@ scanner, or firmware.
    `electron-usb-api.service.ts:731-741`;
    `web-usb-api.service.ts:871-879`)
 
+   **HARDWARE CONFIRMED on the tested scanner:** after persistent state caused
+   `measure?type=aox` to acknowledge without physical acquisition beginning,
+   one call-index-correlated APK-style bare `delete` restored AOX acquisition.
+   The firmware-side deletion scope remains unknown. NutriScan therefore uses
+   this as routine pre-measurement preparation, never as a retry or full-flash
+   recovery substitute.
+
 3. **APK CONFIRMED — start command.** Full/default AOX sends
    `measure?type=aox`; the alternate front-half mode sends
    `measure?type=aox-half`. A default initializer mentions `aox-prod`, but the

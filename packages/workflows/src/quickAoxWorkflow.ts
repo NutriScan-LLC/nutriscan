@@ -63,7 +63,10 @@ export interface QuickAoxScanner {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   identify(): Promise<ScannerIdentity>;
-  startAoxMeasurement(): Promise<AoxMeasurementStart>;
+  startAoxMeasurement(options?: {
+    readonly signal?: AbortSignal;
+    readonly onMeasurementCommandSent?: () => void;
+  }): Promise<AoxMeasurementStart>;
   prepareHandRecognition(target: 'present' | 'removed'): Promise<void>;
   recognizeHand(target: 'present' | 'removed'): Promise<boolean>;
   downloadAoxMeasurement(
@@ -272,8 +275,12 @@ export class QuickAoxWorkflow {
       phase = 'starting-measurement';
       emit({ state: 'starting-measurement' });
       // The only physical measurement start in the workflow. Never loop or retry it.
-      measurementStartInvoked = true;
-      measurementStart = await this.#scanner.startAoxMeasurement();
+      measurementStart = await this.#scanner.startAoxMeasurement(
+        {
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
+          onMeasurementCommandSent: () => { measurementStartInvoked = true; },
+        },
+      );
       emit({ state: 'measurement-started', measurementNumber: measurementStart.measurementNumber });
       throwIfAborted(options.signal);
 

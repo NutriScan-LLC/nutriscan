@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BioZoomScanner } from '../../src/scanner/BioZoomScanner.js';
 import { AoxMeasurementStartRejectedError, MalformedAoxMeasurementAcknowledgmentError, ScannerNotConnectedError, ScannerNotIdentifiedError } from '../../src/scanner/errors.js';
 import { ProtocolResponseTimeoutError } from '../../src/protocol/errors.js';
@@ -68,6 +68,8 @@ class LiveAoxTransport extends FakeTransport {
     const callIndex = query.get('call-index');
     if (command === 'status') {
       this.pushIncoming(encode(JSON.stringify({ command: line, 'call-index': callIndex, serial: 'scanner', busy: 0 }) + '\r\n'));
+    } else if (command === 'delete') {
+      this.pushIncoming(encode(JSON.stringify({ command: line, 'call-index': callIndex, status: 'ok' }) + '\r\n'));
     } else if (command === 'measure') {
       this.pushIncoming(encode(JSON.stringify({ command: line, 'call-index': callIndex, serial: 'scanner', type: 'aox', measurement_nr: 22 }) + '\r\n'));
     } else if (command === 'read-flash') {
@@ -201,6 +203,59 @@ describe('BioZoomScanner', () => {
       const identity = await pending;
       expect(identity.serial).toBeUndefined();
 
+      await scanner.disconnect();
+    });
+  });
+
+  describe('readStatusSnapshot', () => {
+    it('requires identification and then sends exactly one strictly correlated status command', async () => {
+      const live = new LiveAoxTransport();
+      const scanner = new BioZoomScanner(live, { protocol: { pollTimeoutMs: 5, responseTimeoutMs: 300 } });
+      await scanner.connect();
+      await expect(scanner.readStatusSnapshot()).rejects.toBeInstanceOf(ScannerNotIdentifiedError);
+      await scanner.identify();
+      const status = await scanner.readStatusSnapshot();
+      expect(status).toMatchObject({ kind: 'ok', json: { busy: 0 } });
+      expect(live.writtenText.map((text) => text.split('?')[0])).toEqual(['get_status', 'status']);
+      expect(new URLSearchParams(live.writtenText[1]!.trim().split('?')[1]).get('call-index')).toBeTruthy();
+      await scanner.disconnect();
+    });
+  });
+
+  describe('deleteMeasurementStorageOnceDiagnostic', () => {
+    it('requires identification and sends exactly one bare, strictly correlated delete', async () => {
+      const live = new LiveAoxTransport();
+      const scanner = new BioZoomScanner(live, { protocol: { pollTimeoutMs: 5, responseTimeoutMs: 300 } });
+      await scanner.connect();
+      await expect(scanner.deleteMeasurementStorageOnceDiagnostic()).rejects.toBeInstanceOf(ScannerNotIdentifiedError);
+      await scanner.identify();
+
+      const acknowledgment = await scanner.deleteMeasurementStorageOnceDiagnostic();
+      expect(acknowledgment).toMatchObject({ kind: 'ok' });
+      expect(live.writtenText.map((text) => text.trim().split('?')[0])).toEqual(['get_status', 'delete']);
+      const deleteQuery = new URLSearchParams(live.writtenText[1]!.trim().split('?')[1]);
+      expect([...deleteQuery.keys()]).toEqual(['call-index']);
+      expect(deleteQuery.get('call-index')).toBeTruthy();
+      await scanner.disconnect();
+    });
+
+    it('does not accept an unrelated or call-index-less acknowledgment and never retries', async () => {
+      const scanner = new BioZoomScanner(transport, { protocol: { pollTimeoutMs: 5, responseTimeoutMs: 25 } });
+      await scanner.connect();
+      const identify = scanner.identify();
+      await flushMicrotasks();
+      transport.pushIncoming(encode(`{"command":"get_status","call-index":"${callIndexFromWrite(transport)}","serial":"scanner"}\n`));
+      await identify;
+
+      const pending = scanner.deleteMeasurementStorageOnceDiagnostic();
+      await flushMicrotasks();
+      transport.pushIncoming(encode('{"command":"delete","status":"ok"}\n'));
+      await flushMicrotasks();
+      expect(transport.writtenText).toHaveLength(2);
+      const deleteCallIndex = callIndexFromWrite(transport, 1);
+      transport.pushIncoming(encode(`{"command":"delete?call-index=${deleteCallIndex}","call-index":"${deleteCallIndex}","status":"ok"}\n`));
+      await expect(pending).resolves.toMatchObject({ kind: 'ok' });
+      expect(transport.writtenText.map((text) => text.trim().split('?')[0])).toEqual(['get_status', 'delete']);
       await scanner.disconnect();
     });
   });
@@ -942,7 +997,7 @@ describe('BioZoomScanner', () => {
       await scanner.disconnect();
     });
 
-    it('requires identification, sends one start command, and preserves acknowledgment', async () => {
+    it('requires identification, sends one bare delete before one start command, and preserves acknowledgment', async () => {
       const liveTransport = new LiveAoxTransport();
       const scanner = new BioZoomScanner(liveTransport, { protocol: { pollTimeoutMs: 10, responseTimeoutMs: 300 } });
       await scanner.connect();
@@ -952,9 +1007,66 @@ describe('BioZoomScanner', () => {
       expect(result.measurementNumber).toBe(22);
       expect(result.acknowledgment).toMatchObject({ kind: 'ok', json: { type: 'aox', measurement_nr: 22 } });
       const commands = liveTransport.writtenText.map((text) => text.split('?')[0]);
+      expect(commands.slice(-2)).toEqual(['delete', 'measure']);
+      expect(commands.filter((command) => command === 'delete')).toHaveLength(1);
       expect(commands.filter((command) => command === 'measure')).toHaveLength(1);
-      expect(commands).not.toContain('delete');
       expect(commands).not.toContain('erase-chip');
+      expect(commands).not.toContain('e');
+      expect(commands).not.toContain('flash_erase');
+      await scanner.disconnect();
+    });
+
+    it('performs exactly one bare delete for each physical measurement start in a four-measurement series', async () => {
+      const liveTransport = new LiveAoxTransport();
+      const scanner = new BioZoomScanner(liveTransport, { protocol: { pollTimeoutMs: 10, responseTimeoutMs: 300 } });
+      await scanner.connect();
+      await scanner.identify();
+      for (let measurement = 0; measurement < 4; measurement++) await scanner.startAoxMeasurement();
+      const physicalCommands = liveTransport.writtenText
+        .map((text) => text.trim().split('?')[0])
+        .filter((command) => command === 'delete' || command === 'measure');
+      expect(physicalCommands).toEqual([
+        'delete', 'measure', 'delete', 'measure', 'delete', 'measure', 'delete', 'measure',
+      ]);
+      await scanner.disconnect();
+    });
+
+    it('does not send measure until the strictly correlated delete acknowledgment completes', async () => {
+      const scanner = new BioZoomScanner(transport, { protocol: { pollTimeoutMs: 5, responseTimeoutMs: 300 } });
+      await scanner.connect();
+      const identify = scanner.identify();
+      await flushMicrotasks();
+      transport.pushIncoming(encode(`{"command":"get_status","call-index":"${callIndexFromWrite(transport)}","serial":"scanner"}\n`));
+      await identify;
+
+      const started = scanner.startAoxMeasurement();
+      await flushMicrotasks();
+      expect(transport.writtenText.map((text) => text.trim().split('?')[0])).toEqual(['get_status', 'delete']);
+      const deleteCallIndex = callIndexFromWrite(transport, 1);
+      transport.pushIncoming(encode(`{"command":"delete?call-index=${deleteCallIndex}","call-index":"${deleteCallIndex}","status":"ok"}\n`));
+      await vi.waitFor(() => expect(transport.writtenText).toHaveLength(3));
+      expect(transport.writtenText[2]!.startsWith('measure?type=aox&call-index=')).toBe(true);
+      const measureCallIndex = callIndexFromWrite(transport, 2);
+      transport.pushIncoming(encode(`{"command":"measure?type=aox&call-index=${measureCallIndex}","call-index":"${measureCallIndex}","type":"aox","measurement_nr":75}\n`));
+      await expect(started).resolves.toMatchObject({ measurementNumber: 75 });
+      await scanner.disconnect();
+    });
+
+    it('cancellation while delete is pending prevents measurement start after delete acknowledges', async () => {
+      const scanner = new BioZoomScanner(transport, { protocol: { pollTimeoutMs: 5, responseTimeoutMs: 300 } });
+      await scanner.connect();
+      const identify = scanner.identify();
+      await flushMicrotasks();
+      transport.pushIncoming(encode(`{"command":"get_status","call-index":"${callIndexFromWrite(transport)}","serial":"scanner"}\n`));
+      await identify;
+      const controller = new AbortController();
+      const started = scanner.startAoxMeasurement({ signal: controller.signal });
+      await flushMicrotasks();
+      controller.abort('cancel-after-delete-send');
+      const deleteCallIndex = callIndexFromWrite(transport, 1);
+      transport.pushIncoming(encode(`{"command":"delete?call-index=${deleteCallIndex}","call-index":"${deleteCallIndex}","status":"ok"}\n`));
+      await expect(started).rejects.toBe('cancel-after-delete-send');
+      expect(transport.writtenText.map((text) => text.trim().split('?')[0])).toEqual(['get_status', 'delete']);
       await scanner.disconnect();
     });
 

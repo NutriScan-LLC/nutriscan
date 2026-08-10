@@ -1,5 +1,6 @@
 export {
   BioZoomScanner,
+  APK_BARE_DELETE_RESPONSE_TIMEOUT_MS,
   type BioZoomScannerOptions,
   type ScannerIdentity,
   type AoxMeasurementStart,

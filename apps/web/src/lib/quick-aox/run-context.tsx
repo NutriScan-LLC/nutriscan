@@ -18,6 +18,7 @@ import {
   isWebSerialSupported,
 } from "./browser-workflow";
 import { requiresSerialRecovery } from "./retry-policy";
+import { ScannerRunGuard, type SafeScannerDiagnosticReport } from "../scanner-session-diagnostic";
 
 type Capability = "checking" | "supported" | "unsupported";
 
@@ -27,10 +28,13 @@ type QuickAoxRunContextValue = {
   outcome: QuickAoxWorkflowOutcome | null;
   running: boolean;
   recoveryRequired: boolean;
+  diagnostic: SafeScannerDiagnosticReport | null;
   startRun: () => void;
   beginScan: () => void;
   cancel: () => void;
   clearCompletedRun: () => void;
+  /** Releases an idle, pre-measurement session when the user selects another workflow. */
+  releaseConnection: () => Promise<void>;
 };
 
 const QuickAoxRunContext = createContext<QuickAoxRunContextValue | null>(null);
@@ -44,6 +48,8 @@ export function QuickAoxRunProvider({ children }: { children: ReactNode }) {
   const abortControllerRef = useRef<AbortController | null>(null);
   const beginRef = useRef<(() => void) | null>(null);
   const sessionRef = useRef<BrowserQuickAoxSession | null>(null);
+  const runGuardRef = useRef(new ScannerRunGuard());
+  const [diagnostic, setDiagnostic] = useState<SafeScannerDiagnosticReport | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -58,7 +64,9 @@ export function QuickAoxRunProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const startRun = useCallback(() => {
-    if (running || !isWebSerialSupported()) return;
+    if (!isWebSerialSupported()) return;
+    const guardRunId = crypto.randomUUID();
+    if (!runGuardRef.current.tryStart(guardRunId)) return;
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
     beginRef.current = null;
@@ -67,10 +75,11 @@ export function QuickAoxRunProvider({ children }: { children: ReactNode }) {
     setRunning(true);
     setRecoveryRequired(false);
 
-    const session = sessionRef.current ?? new BrowserQuickAoxSession();
+    const session = sessionRef.current ?? new BrowserQuickAoxSession(undefined, setDiagnostic);
     sessionRef.current = session;
+    session.startDiagnosticRun();
     const workflow = session.workflow;
-    void workflow.run({
+    const settlement = workflow.run({
       language: "en",
       createUuid: () => crypto.randomUUID(),
       signal: abortController.signal,
@@ -90,8 +99,10 @@ export function QuickAoxRunProvider({ children }: { children: ReactNode }) {
       onProgress: setEvent,
       disconnectOnFinish: false,
     }).then(async (completedOutcome) => {
+      if (!runGuardRef.current.isCurrent(guardRunId)) return;
       if (requiresSerialRecovery(completedOutcome)) {
         await session.recoverConnection().catch(() => {});
+        if (!runGuardRef.current.isCurrent(guardRunId)) return;
         setRecoveryRequired(true);
       }
       setOutcome(completedOutcome);
@@ -99,6 +110,7 @@ export function QuickAoxRunProvider({ children }: { children: ReactNode }) {
       abortControllerRef.current = null;
       beginRef.current = null;
     }).catch((error: unknown) => {
+      if (!runGuardRef.current.isCurrent(guardRunId)) return;
       setOutcome({
         kind: "failed",
         failureKind: "scanner",
@@ -111,8 +123,11 @@ export function QuickAoxRunProvider({ children }: { children: ReactNode }) {
       setRunning(false);
       abortControllerRef.current = null;
       beginRef.current = null;
+    }).finally(() => {
+      runGuardRef.current.finish(guardRunId);
     });
-  }, [running]);
+    runGuardRef.current.attach(guardRunId, settlement);
+  }, []);
 
   const beginScan = useCallback(() => {
     beginRef.current?.();
@@ -128,6 +143,18 @@ export function QuickAoxRunProvider({ children }: { children: ReactNode }) {
     setOutcome(null);
   }, [running]);
 
+  const releaseConnection = useCallback(async () => {
+    abortControllerRef.current?.abort("Switching scan type before measurement");
+    beginRef.current = null;
+    await runGuardRef.current.awaitCurrentSettlement();
+    await sessionRef.current?.recoverConnection();
+    abortControllerRef.current = null;
+    setRunning(false);
+    setEvent(null);
+    setOutcome(null);
+    setRecoveryRequired(false);
+  }, []);
+
   return (
     <QuickAoxRunContext.Provider value={{
       capability,
@@ -135,10 +162,12 @@ export function QuickAoxRunProvider({ children }: { children: ReactNode }) {
       outcome,
       running,
       recoveryRequired,
+      diagnostic,
       startRun,
       beginScan,
       cancel,
       clearCompletedRun,
+      releaseConnection,
     }}>
       {children}
     </QuickAoxRunContext.Provider>

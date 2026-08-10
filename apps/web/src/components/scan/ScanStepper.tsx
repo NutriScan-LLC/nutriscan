@@ -18,16 +18,25 @@ const STEPS = [
 
 export default function ScanStepper() {
   const pathname = usePathname();
+  const precision = pathname.startsWith('/scan/precision');
+  const steps = precision ? [
+    { label: 'Welcome', path: '/scan/precision/welcome' },
+    { label: 'System Check', path: '/scan/precision/system-check' },
+    { label: 'Instructions', path: '/scan/precision' },
+    { label: 'Measurements', path: '/scan/precision/in-progress' },
+    { label: 'Calculating', path: '/scan/precision/processing' },
+    { label: 'Results', path: '/scan/precision/results' },
+  ] : STEPS;
   const activeIndex = Math.max(
     0,
-    pathname === "/scan/outcome"
-      ? STEPS.length - 1
-      : STEPS.findIndex((step) => step.path === pathname),
+    pathname.endsWith('/outcome')
+      ? steps.length - 1
+      : steps.findIndex((step) => step.path === pathname),
   );
 
   return (
     <ol className="mx-auto flex w-full max-w-xl items-center" aria-label="Scan progress">
-      {STEPS.map((step, index) => {
+      {steps.map((step, index) => {
         const isComplete = index < activeIndex;
         const isActive = index === activeIndex;
         return (
@@ -54,7 +63,7 @@ export default function ScanStepper() {
                 {step.label}
               </span>
             </div>
-            {index < STEPS.length - 1 && (
+            {index < steps.length - 1 && (
               <span
                 className={
                   "mx-2 h-px flex-1 " + (isComplete ? "bg-emerald-600" : "bg-slate-200")

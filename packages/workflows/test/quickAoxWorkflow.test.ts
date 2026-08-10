@@ -74,7 +74,12 @@ function harness(): Harness {
     identify: async () => { state.calls.push('identify'); return identity; },
     prepareHandRecognition: async () => {},
     recognizeHand: async (target) => { state.calls.push(`hand:${target}`); return true; },
-    startAoxMeasurement: async () => { state.calls.push('start'); return measurementStart; },
+    startAoxMeasurement: async (startOptions) => {
+      state.calls.push('delete');
+      startOptions?.onMeasurementCommandSent?.();
+      state.calls.push('measure');
+      return measurementStart;
+    },
     downloadAoxMeasurement: async (measurementNumber) => {
       state.calls.push(`download:${measurementNumber}`);
       return state.download(measurementNumber);
@@ -111,15 +116,21 @@ describe('QuickAoxWorkflow sequencing', () => {
     let samples = 0;
     h.scanner.prepareHandRecognition = async (target) => { timeline.push(`prepare:${target}`); };
     h.scanner.recognizeHand = async (target) => { timeline.push(`sample:${target}`); return target === 'removed' || ++samples === 2; };
-    h.scanner.startAoxMeasurement = async () => { timeline.push('measure'); return measurementStart; };
+    h.scanner.startAoxMeasurement = async (startOptions) => {
+      timeline.push('delete');
+      startOptions?.onMeasurementCommandSent?.();
+      timeline.push('measure');
+      return measurementStart;
+    };
     await new QuickAoxWorkflow({
       scanner: h.scanner, scoring: h.scoring,
       wait: async (milliseconds) => { timeline.push(`wait:${milliseconds}`); },
     }).run(options({ handDetection: { initialDelayMs: 100, resultDelayMs: 500, successDelayMs: 100 } }));
     expect(timeline.slice(0, 8)).toEqual([
       'prepare:present', 'wait:100', 'sample:present', 'wait:500',
-      'sample:present', 'wait:500', 'wait:100', 'measure',
+      'sample:present', 'wait:500', 'wait:100', 'delete',
     ]);
+    expect(timeline.slice(7, 9)).toEqual(['delete', 'measure']);
     expect(timeline.filter((entry) => entry === 'prepare:present')).toHaveLength(1);
   });
 
@@ -135,10 +146,11 @@ describe('QuickAoxWorkflow sequencing', () => {
     const workflow = new QuickAoxWorkflow({ scanner: h.scanner, scoring: h.scoring, wait: async () => {} });
     await workflow.run(options());
     expect(h.calls).toEqual([
-      'connect', 'identify', 'hand:present', 'hand:present', 'start', 'download:42',
+      'connect', 'identify', 'hand:present', 'hand:present', 'delete', 'measure', 'download:42',
       'hand:removed', 'hand:removed', `pre:${identity.serial}`, 'submit:42', 'disconnect',
     ]);
-    expect(h.calls.indexOf('start')).toBeGreaterThan(h.calls.lastIndexOf('hand:present'));
+    expect(h.calls.indexOf('delete')).toBeGreaterThan(h.calls.lastIndexOf('hand:present'));
+    expect(h.calls.indexOf('measure')).toBeGreaterThan(h.calls.indexOf('delete'));
     expect(h.calls.indexOf(`pre:${identity.serial}`)).toBeGreaterThan(h.calls.lastIndexOf('hand:removed'));
   });
 
@@ -158,10 +170,11 @@ describe('QuickAoxWorkflow sequencing', () => {
 
     expect(outcome.kind).toBe('accepted');
     expect(h.calls).toEqual([
-      'connect', 'identify', 'begin-confirmed', 'hand:present', 'start', 'download:42', 'hand:removed',
+      'connect', 'identify', 'begin-confirmed', 'hand:present', 'delete', 'measure', 'download:42', 'hand:removed',
       `pre:${identity.serial}`, 'wait:109', 'submit:42', 'disconnect',
     ]);
-    expect(h.calls.filter((call) => call === 'start')).toHaveLength(1);
+    expect(h.calls.filter((call) => call === 'delete')).toHaveLength(1);
+    expect(h.calls.filter((call) => call === 'measure')).toHaveLength(1);
     expect(waits).toEqual([109]);
     expect(h.submitted[0]).toMatchObject({
       scannerSerial: identity.serial,
@@ -197,7 +210,7 @@ describe('QuickAoxWorkflow sequencing', () => {
     h.scoringResponse = { aox: 5.6, aox_q: qualityCode };
     const outcome = await new QuickAoxWorkflow({ scanner: h.scanner, scoring: h.scoring, wait: async () => {} }).run(options());
     expect(outcome.kind).toBe(expectedKind);
-    expect(h.calls.filter((call) => call === 'start')).toHaveLength(1);
+    expect(h.calls.filter((call) => call === 'measure')).toHaveLength(1);
     expect(h.calls.filter((call) => call.startsWith('download:'))).toHaveLength(1);
   });
 
@@ -232,11 +245,32 @@ describe('QuickAoxWorkflow sequencing', () => {
     releaseHand();
     await first;
     expect(h.calls.filter((call) => call === 'connect')).toHaveLength(1);
-    expect(h.calls.filter((call) => call === 'start')).toHaveLength(1);
+    expect(h.calls.filter((call) => call === 'measure')).toHaveLength(1);
   });
 });
 
 describe('QuickAoxWorkflow cancellation and failures', () => {
+  it('cancellation during routine delete prevents measurement start and remains physically not-started', async () => {
+    const h = harness();
+    const controller = new AbortController();
+    h.scanner.startAoxMeasurement = async (startOptions) => {
+      h.calls.push('delete');
+      await new Promise<void>((_resolve, reject) => {
+        startOptions?.signal?.addEventListener('abort', () => reject(startOptions.signal?.reason), { once: true });
+        controller.abort('cancelled-during-delete');
+      });
+      throw new Error('unreachable');
+    };
+    const outcome = await new QuickAoxWorkflow({ scanner: h.scanner, scoring: h.scoring }).run(options({ signal: controller.signal }));
+    expect(outcome).toMatchObject({
+      kind: 'cancelled', phase: 'starting-measurement', physicalMeasurementStarted: false,
+      physicalMeasurementMayHaveStarted: false, reason: 'cancelled-during-delete',
+    });
+    expect(h.calls).toContain('delete');
+    expect(h.calls).not.toContain('measure');
+    expect(h.calls.some((call) => call.startsWith('download:'))).toBe(false);
+  });
+
   it.each([
     ['UPSTREAM_INVALID_PRE_REQUEST', 'invalid-pre-request'],
     ['UPSTREAM_REPEAT_REQUIRED', 'unsupported-pre-request'],
@@ -275,7 +309,7 @@ describe('QuickAoxWorkflow cancellation and failures', () => {
       handDetection: { initialDelayMs: 100, resultDelayMs: 500, successDelayMs: 100 },
     }));
     expect(outcome).toMatchObject({ kind: 'cancelled', phase: 'detecting-hand', physicalMeasurementStarted: false });
-    expect(h.calls).not.toContain('start');
+    expect(h.calls).not.toContain('measure');
   });
 
   it('times out cancellable hand polling without starting a measurement', async () => {
@@ -288,7 +322,7 @@ describe('QuickAoxWorkflow cancellation and failures', () => {
     });
     const outcome = await workflow.run(options({ handDetection: { initialDelayMs: 0, resultDelayMs: 500, successDelayMs: 0, timeoutMs: 1_000 } }));
     expect(outcome).toMatchObject({ kind: 'failed', failureKind: 'hand-detection', phase: 'detecting-hand', physicalMeasurementStarted: false });
-    expect(h.calls).not.toContain('start');
+    expect(h.calls).not.toContain('measure');
   });
 
   it('cancels before hand confirmation without starting or scoring', async () => {
@@ -319,7 +353,7 @@ describe('QuickAoxWorkflow cancellation and failures', () => {
     expect(outcome).toMatchObject({
       kind: 'cancelled', phase: 'downloading', physicalMeasurementStarted: true, reason: 'cancelled-after-start',
     });
-    expect(h.calls).toEqual(['connect', 'identify', 'hand:present', 'start', 'download:42', 'disconnect']);
+    expect(h.calls).toEqual(['connect', 'identify', 'hand:present', 'delete', 'measure', 'download:42', 'disconnect']);
   });
 
   it('cancels during required wait and never submits', async () => {
@@ -336,7 +370,7 @@ describe('QuickAoxWorkflow cancellation and failures', () => {
     const outcome = await workflow.run(options({ signal: controller.signal }));
     expect(outcome).toMatchObject({ kind: 'cancelled', phase: 'waiting-to-submit', physicalMeasurementStarted: true });
     expect(h.calls.some((call) => call.startsWith('submit:'))).toBe(false);
-    expect(h.calls.filter((call) => call === 'start')).toHaveLength(1);
+    expect(h.calls.filter((call) => call === 'measure')).toHaveLength(1);
   });
 
   it('does not identify or send another scanner operation when cancellation is observed after connect', async () => {
@@ -385,7 +419,7 @@ describe('QuickAoxWorkflow cancellation and failures', () => {
     const outcome = await new QuickAoxWorkflow({ scanner: h.scanner, scoring: h.scoring }).run(options());
     expect(outcome).toMatchObject({ kind: 'failed', failureKind: 'acquisition', phase: 'downloading' });
     expect(h.calls.some((call) => call.startsWith('pre:'))).toBe(false);
-    expect(h.calls.filter((call) => call === 'start')).toHaveLength(1);
+    expect(h.calls.filter((call) => call === 'measure')).toHaveLength(1);
   });
 
   it('passes the start measurement number to download and rejects mismatched acquisition evidence', async () => {

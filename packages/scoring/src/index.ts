@@ -6,6 +6,7 @@ export * from './measurementSubmissionDiagnostic.js';
 export * from './pairedScoringDiagnostic.js';
 export * from './quickAox.js';
 export * from './quickAoxContract.js';
+export * from './precisionAox.js';
 
 export type EvidenceClassification =
   | 'hardware confirmed'
