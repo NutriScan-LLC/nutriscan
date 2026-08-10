@@ -2,9 +2,13 @@ import {
   QUICK_AOX_MULTIPART_CONTRACT,
   buildQuickAoxMeasureUrl,
   buildQuickAoxPreRequestUrl,
+  parseQuickAoxPreRequest,
   type QuickAoxScoringRequest,
 } from "@nutriscan/scoring/quick-aox";
 import type { QuickAoxScoringGateway } from "@nutriscan/workflows";
+import { QuickAoxPreRequestDiagnosticError } from "./pre-request-errors";
+
+export const QUICK_AOX_PRE_REQUEST_TIMEOUT_MS = 2_000;
 
 export class QuickAoxUpstreamError extends Error {
   constructor(
@@ -20,24 +24,45 @@ type FetchImplementation = typeof fetch;
 
 export function createQuickAoxServerGateway(options: {
   preRequestBaseUrl: string;
+  requestId?: string;
   fetchImplementation?: FetchImplementation;
 }): QuickAoxScoringGateway {
   const fetchImplementation = options.fetchImplementation ?? fetch;
+  const requestId = options.requestId ?? crypto.randomUUID();
 
   return {
     async preRequest({ scannerSerial, signal }) {
-      const response = await fetchImplementation(
-        buildQuickAoxPreRequestUrl(options.preRequestBaseUrl, scannerSerial),
-        {
-          method: "GET",
+      let response: Response;
+      try {
+        response = await fetchPreRequestWithTimeout(
+          fetchImplementation,
+          buildQuickAoxPreRequestUrl(options.preRequestBaseUrl, scannerSerial),
           signal,
-          cache: "no-store",
-        },
-      );
-      if (!response.ok) {
-        throw new QuickAoxUpstreamError("pre-request", response.status);
+          requestId,
+        );
+      } catch (error) {
+        if (error instanceof QuickAoxPreRequestDiagnosticError || signal?.aborted) throw error;
+        throw classifyFetchFailure(error, requestId);
       }
-      return readUpstreamJson(response, "pre-request");
+      if (!response.ok) {
+        throw new QuickAoxPreRequestDiagnosticError("UPSTREAM_HTTP_ERROR", 502, requestId, response.status);
+      }
+      let raw: unknown;
+      try { raw = await response.json(); } catch {
+        throw new QuickAoxPreRequestDiagnosticError("UPSTREAM_NON_JSON", 502, requestId, response.status);
+      }
+      const parsed = parseQuickAoxPreRequest(raw);
+      if (!parsed.ok) {
+        throw new QuickAoxPreRequestDiagnosticError(
+          parsed.error.code === "unsupported-repeat-pre-request"
+            ? "UPSTREAM_REPEAT_REQUIRED"
+            : "UPSTREAM_INVALID_PRE_REQUEST",
+          502,
+          requestId,
+          response.status,
+        );
+      }
+      return raw;
     },
 
     async submit({ scannerSerial, recommendedServer, scoringRequest, signal }) {
@@ -65,6 +90,53 @@ export function createQuickAoxServerGateway(options: {
       return readUpstreamJson(response, "submission");
     },
   };
+}
+
+export async function fetchPreRequestWithTimeout(
+  fetchImplementation: FetchImplementation,
+  url: string,
+  callerSignal: AbortSignal | undefined,
+  requestId: string,
+): Promise<Response> {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, QUICK_AOX_PRE_REQUEST_TIMEOUT_MS);
+  const cancel = () => controller.abort(callerSignal?.reason);
+  callerSignal?.addEventListener("abort", cancel, { once: true });
+  try {
+    return await fetchImplementation(url, { method: "GET", signal: controller.signal, cache: "no-store" });
+  } catch (error) {
+    if (callerSignal?.aborted) throw callerSignal.reason ?? new DOMException("Aborted", "AbortError");
+    if (timedOut) throw new QuickAoxPreRequestDiagnosticError("UPSTREAM_TIMEOUT", 504, requestId);
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    callerSignal?.removeEventListener("abort", cancel);
+  }
+}
+
+export function classifyFetchFailure(error: unknown, requestId: string): QuickAoxPreRequestDiagnosticError {
+  const code = nestedErrorCode(error);
+  if (code === "ENOTFOUND" || code === "EAI_AGAIN") {
+    return new QuickAoxPreRequestDiagnosticError("UPSTREAM_DNS_FAILURE", 502, requestId);
+  }
+  if (code && (code.startsWith("CERT_") || code.includes("TLS") || code.includes("SSL") || code === "DEPTH_ZERO_SELF_SIGNED_CERT" || code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE")) {
+    return new QuickAoxPreRequestDiagnosticError("UPSTREAM_TLS_FAILURE", 502, requestId);
+  }
+  return new QuickAoxPreRequestDiagnosticError("UPSTREAM_NETWORK_FAILURE", 502, requestId);
+}
+
+function nestedErrorCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const direct = (error as { code?: unknown }).code;
+  if (typeof direct === "string") return direct;
+  const cause = (error as { cause?: unknown }).cause;
+  return typeof cause === "object" && cause !== null && typeof (cause as { code?: unknown }).code === "string"
+    ? (cause as { code: string }).code
+    : undefined;
 }
 
 async function readUpstreamJson(

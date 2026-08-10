@@ -14,9 +14,10 @@ import type {
   QuickAoxWorkflowOutcome,
 } from "@nutriscan/workflows";
 import {
-  createBrowserQuickAoxWorkflow,
+  BrowserQuickAoxSession,
   isWebSerialSupported,
 } from "./browser-workflow";
+import { requiresSerialRecovery } from "./retry-policy";
 
 type Capability = "checking" | "supported" | "unsupported";
 
@@ -25,8 +26,9 @@ type QuickAoxRunContextValue = {
   event: QuickAoxWorkflowEvent | null;
   outcome: QuickAoxWorkflowOutcome | null;
   running: boolean;
+  recoveryRequired: boolean;
   startRun: () => void;
-  confirmHandPositioned: () => void;
+  beginScan: () => void;
   cancel: () => void;
   clearCompletedRun: () => void;
 };
@@ -38,8 +40,10 @@ export function QuickAoxRunProvider({ children }: { children: ReactNode }) {
   const [event, setEvent] = useState<QuickAoxWorkflowEvent | null>(null);
   const [outcome, setOutcome] = useState<QuickAoxWorkflowOutcome | null>(null);
   const [running, setRunning] = useState(false);
+  const [recoveryRequired, setRecoveryRequired] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const handConfirmationRef = useRef<(() => void) | null>(null);
+  const beginRef = useRef<(() => void) | null>(null);
+  const sessionRef = useRef<BrowserQuickAoxSession | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -49,6 +53,7 @@ export function QuickAoxRunProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false;
       abortControllerRef.current?.abort("NutriScan closed the active workflow");
+      void sessionRef.current?.disconnect();
     };
   }, []);
 
@@ -56,35 +61,43 @@ export function QuickAoxRunProvider({ children }: { children: ReactNode }) {
     if (running || !isWebSerialSupported()) return;
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
-    handConfirmationRef.current = null;
+    beginRef.current = null;
     setEvent(null);
     setOutcome(null);
     setRunning(true);
+    setRecoveryRequired(false);
 
-    const workflow = createBrowserQuickAoxWorkflow();
+    const session = sessionRef.current ?? new BrowserQuickAoxSession();
+    sessionRef.current = session;
+    const workflow = session.workflow;
     void workflow.run({
       language: "en",
       createUuid: () => crypto.randomUUID(),
       signal: abortController.signal,
-      waitForHandPositioned: ({ signal }) => new Promise<void>((resolve, reject) => {
+      waitForBegin: ({ signal }) => new Promise<void>((resolve, reject) => {
         const onAbort = () => {
-          handConfirmationRef.current = null;
+          beginRef.current = null;
           reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
         };
         const confirm = () => {
           signal?.removeEventListener("abort", onAbort);
-          handConfirmationRef.current = null;
+          beginRef.current = null;
           resolve();
         };
-        handConfirmationRef.current = confirm;
+        beginRef.current = confirm;
         signal?.addEventListener("abort", onAbort, { once: true });
       }),
       onProgress: setEvent,
-    }).then((completedOutcome) => {
+      disconnectOnFinish: false,
+    }).then(async (completedOutcome) => {
+      if (requiresSerialRecovery(completedOutcome)) {
+        await session.recoverConnection().catch(() => {});
+        setRecoveryRequired(true);
+      }
       setOutcome(completedOutcome);
       setRunning(false);
       abortControllerRef.current = null;
-      handConfirmationRef.current = null;
+      beginRef.current = null;
     }).catch((error: unknown) => {
       setOutcome({
         kind: "failed",
@@ -97,12 +110,12 @@ export function QuickAoxRunProvider({ children }: { children: ReactNode }) {
       });
       setRunning(false);
       abortControllerRef.current = null;
-      handConfirmationRef.current = null;
+      beginRef.current = null;
     });
   }, [running]);
 
-  const confirmHandPositioned = useCallback(() => {
-    handConfirmationRef.current?.();
+  const beginScan = useCallback(() => {
+    beginRef.current?.();
   }, []);
 
   const cancel = useCallback(() => {
@@ -121,8 +134,9 @@ export function QuickAoxRunProvider({ children }: { children: ReactNode }) {
       event,
       outcome,
       running,
+      recoveryRequired,
       startRun,
-      confirmHandPositioned,
+      beginScan,
       cancel,
       clearCompletedRun,
     }}>
@@ -130,6 +144,7 @@ export function QuickAoxRunProvider({ children }: { children: ReactNode }) {
     </QuickAoxRunContext.Provider>
   );
 }
+
 
 export function useQuickAoxRun(): QuickAoxRunContextValue {
   const context = useContext(QuickAoxRunContext);

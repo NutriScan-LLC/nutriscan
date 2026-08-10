@@ -40,12 +40,12 @@ const INSTRUCTIONS = [
 export default function ScanInstructionsPage() {
   const router = useRouter();
   const [agreed, setAgreed] = useState(false);
-  const { event, running, confirmHandPositioned } = useQuickAoxRun();
-  const ready = running && event?.state === "awaiting-hand-position";
+  const { event, running, beginScan } = useQuickAoxRun();
+  const ready = running && event?.state === "awaiting-begin";
 
   function handleContinue() {
     if (!ready) return;
-    confirmHandPositioned();
+    beginScan();
     router.push("/scan/in-progress");
   }
 
@@ -111,7 +111,7 @@ export default function ScanInstructionsPage() {
           <div>
             <p className="text-sm font-semibold text-slate-900">Quick AOX scan</p>
             <p className="mt-0.5 text-xs leading-relaxed text-slate-600">
-              One measurement will begin only after you confirm your hand is positioned.
+              Begin the scan, then place your hand on the scanner when prompted.
             </p>
           </div>
         </div>
@@ -134,7 +134,7 @@ export default function ScanInstructionsPage() {
           onClick={handleContinue}
           className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full bg-emerald-700 px-6 py-3.5 text-base font-semibold text-white shadow-sm ring-1 ring-emerald-700/10 transition-all hover:bg-emerald-800 hover:shadow-md disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none disabled:ring-0"
         >
-          Start scan
+          Begin scan
           <ArrowRightIcon className="h-4 w-4" />
         </button>
       </motion.div>

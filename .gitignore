@@ -2,4 +2,7 @@ node_modules/
 dist/
 coverage/
 *.log
+**/diagnostics/*.json
+reverse-engineering/*.apk
+reverse-engineering/work/
 .DS_Store

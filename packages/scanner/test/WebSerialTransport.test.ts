@@ -47,6 +47,22 @@ describe('WebSerialTransport', () => {
     await transport.disconnect();
   });
 
+  it('reopens cleanly after a non-destructive disconnect', async () => {
+    const transport = createTransport(port);
+    await transport.connect();
+    port.pushIncoming(new Uint8Array([1]));
+    await flushMicrotasks();
+    expect([...await transport.read(100)]).toEqual([1]);
+    await transport.disconnect();
+
+    await transport.connect();
+    port.pushIncoming(new Uint8Array([2]));
+    await flushMicrotasks();
+    expect([...await transport.read(100)]).toEqual([2]);
+    expect(port.openCalls).toHaveLength(2);
+    await transport.disconnect();
+  });
+
   describe('writes', () => {
     it('writes raw bytes to the underlying port', async () => {
       const transport = createTransport(port);

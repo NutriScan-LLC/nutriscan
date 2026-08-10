@@ -1,0 +1,35 @@
+{
+  "name": "@nutriscan/scoring",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "BioZoom scoring-boundary tooling with offline request construction and permissioned diagnostics.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./quick-aox": {
+      "types": "./dist/quick-aox.d.ts",
+      "default": "./dist/quick-aox.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "pre-request": "npm run build && node dist/cli.js",
+    "submit-m35": "npm run build && node dist/submitM35Cli.js",
+    "paired-m35": "npm run build && node dist/pairedScoringMain.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nutriscan/scanner": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

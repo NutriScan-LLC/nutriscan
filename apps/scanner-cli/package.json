@@ -1,0 +1,22 @@
+{
+  "name": "@nutriscan/scanner-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Experimental read-safe serial diagnostics CLI for BioZoom development.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "npm run build --workspace @nutriscan/scanner && npm run build --workspace @nutriscan/scoring && npm run build && node dist/cli.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nutriscan/scanner": "*",
+    "@nutriscan/scoring": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ProtocolClient } from '../../src/protocol/ProtocolClient.js';
 import {
-  CallIndexMismatchError,
   FrameTooLargeError,
   ProtocolDetectionError,
   ProtocolNotStartedError,
@@ -102,7 +101,7 @@ describe('ProtocolClient', () => {
       await client.stop();
     });
 
-    it('rejects with CallIndexMismatchError when the response carries a different call-index', async () => {
+    it('ignores a stale mismatched frame and waits for the correlated response', async () => {
       const client = new ProtocolClient(transport, { pollTimeoutMs: 10, responseTimeoutMs: 300 });
       client.start();
 
@@ -111,7 +110,10 @@ describe('ProtocolClient', () => {
 
       transport.pushIncoming(encode('{"command":"status","call-index":"definitely-not-it","type":"ok"}\n'));
 
-      await expect(pending).rejects.toBeInstanceOf(CallIndexMismatchError);
+      await flushMicrotasks();
+      const expected = callIndexFromWrite(transport, 0);
+      transport.pushIncoming(encode(`{"command":"status","call-index":"${expected}"}\n`));
+      await expect(pending).resolves.toMatchObject({ kind: 'ok' });
       await client.stop();
     });
 
@@ -210,6 +212,16 @@ describe('ProtocolClient', () => {
   });
 
   describe('framing errors', () => {
+    it('does not let a call-index-less frame satisfy a strict production command', async () => {
+      const client = new ProtocolClient(transport, { pollTimeoutMs: 5, responseTimeoutMs: 30 });
+      client.start();
+      const pending = client.sendCommand('measure', { type: 'aox' }, { requireCallIndex: true });
+      await flushMicrotasks();
+      transport.pushIncoming(encode('{"command":"measure?type=aox","type":"aox","measurement_nr":99}\n'));
+      await expect(pending).rejects.toBeInstanceOf(ProtocolResponseTimeoutError);
+      await client.stop();
+    });
+
     it('rejects a pending sendCommand with FrameTooLargeError and keeps the loop running', async () => {
       const client = new ProtocolClient(transport, { pollTimeoutMs: 10, responseTimeoutMs: 500, maxFrameBufferSize: 8 });
       const errors: Error[] = [];
@@ -297,7 +309,8 @@ describe('ProtocolClient', () => {
       // Since this response IS a JSON error, detectV2 still retries with
       // `status` per the spec's retry rule.
       expect(transport.writtenText).toHaveLength(2);
-      transport.pushIncoming(encode('{"type":"error"}\n'));
+      const statusCallIndex = callIndexFromWrite(transport, 1);
+      transport.pushIncoming(encode(`{"type":"error","call-index":"${statusCallIndex}"}\n`));
 
       await expect(detection).rejects.toBeInstanceOf(ProtocolDetectionError);
       await client.stop();

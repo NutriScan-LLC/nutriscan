@@ -85,7 +85,7 @@ export class WebSerialTransport implements Transport {
     this.#port = port;
     this.#writer = port.writable.getWriter();
     this.#reader = port.readable.getReader();
-    this.#buffer.clear();
+    this.#buffer.reset();
     this.#connected = true;
     this.#readLoopPromise = this.#runReadLoop(this.#reader);
   }
@@ -106,6 +106,7 @@ export class WebSerialTransport implements Transport {
       // the connection mid-read. Either way, buffer teardown in the
       // `finally` block below notifies anyone waiting on read().
     } finally {
+      this.#connected = false;
       this.#buffer.close(new TransportDisconnectedError());
     }
   }

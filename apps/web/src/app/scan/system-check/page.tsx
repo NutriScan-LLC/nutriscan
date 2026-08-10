@@ -19,7 +19,7 @@ type CheckStatus = "pending" | "checking" | "success" | "failure";
 export default function ScanSystemCheckPage() {
   const router = useRouter();
   const { capability, event, outcome, running, startRun, clearCompletedRun } = useQuickAoxRun();
-  const identified = event?.state === "awaiting-hand-position";
+  const identified = event?.state === "awaiting-begin";
 
   useEffect(() => {
     if (identified) router.push("/scan");
@@ -72,7 +72,7 @@ export default function ScanSystemCheckPage() {
           icon={ScannerDeviceIcon}
           label="Scanner identified"
           status={scannerStatus}
-          detail={identified && event.state === "awaiting-hand-position"
+          detail={identified && event.state === "awaiting-begin"
             ? `Scanner ${event.identity.serial ?? "identified"}`
             : scannerStatus === "checking"
               ? event?.state === "identifying" ? "Identifying scanner…" : "Choose your scanner in the browser prompt…"

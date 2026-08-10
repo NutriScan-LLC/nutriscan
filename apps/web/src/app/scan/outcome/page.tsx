@@ -6,13 +6,14 @@ import { motion } from "framer-motion";
 import { AlertTriangleIcon, ArrowRightIcon } from "@/components/icons";
 import { DEFAULT_QUICK_AOX_PRESENTATION } from "@nutriscan/scoring/quick-aox";
 import { useQuickAoxRun } from "@/lib/quick-aox/run-context";
+import { FAILED_SCAN_RETRY_PATH } from "@/lib/quick-aox/retry-policy";
 
 export default function ScanOutcomePage() {
   const router = useRouter();
-  const { event, outcome, running, startRun, clearCompletedRun } = useQuickAoxRun();
+  const { event, outcome, running, clearCompletedRun } = useQuickAoxRun();
 
   useEffect(() => {
-    if (event?.state === "awaiting-hand-position") router.replace("/scan");
+    if (event?.state === "awaiting-begin") router.replace("/scan");
   }, [event, router]);
 
   if (!outcome || outcome.kind === "accepted") {
@@ -22,7 +23,7 @@ export default function ScanOutcomePage() {
   const presentation = presentationFor(outcome);
   function beginAnotherRun() {
     clearCompletedRun();
-    startRun();
+    router.replace(FAILED_SCAN_RETRY_PATH);
   }
 
   return (
@@ -38,6 +39,16 @@ export default function ScanOutcomePage() {
         <p className="mt-5 text-xs font-semibold uppercase tracking-widest text-amber-700">{presentation.eyebrow}</p>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">{presentation.title}</h1>
         <p className="mt-3 text-sm leading-relaxed text-slate-600">{presentation.message}</p>
+        {outcome.kind === "failed" && outcome.diagnostic && (
+          <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-left text-xs text-slate-500">
+            <p>Diagnostic: {outcome.diagnostic.code}</p>
+            <p className="mt-1">Reference: {outcome.diagnostic.requestId}</p>
+            <p className="mt-1">NutriScan status: {outcome.diagnostic.status}</p>
+            {outcome.diagnostic.upstreamStatus !== undefined && (
+              <p className="mt-1">Upstream status: {outcome.diagnostic.upstreamStatus}</p>
+            )}
+          </div>
+        )}
 
         {presentation.canTryAgain && (
           <button

@@ -5,7 +5,6 @@ import { parseResponseFrame, type ParsedResponse } from './response.js';
 import { formatCommandLine } from './command.js';
 import { generateCallIndex } from './callIndex.js';
 import {
-  CallIndexMismatchError,
   ProtocolDetectionError,
   ProtocolError,
   ProtocolNotStartedError,
@@ -33,6 +32,7 @@ interface PendingRequest {
   resolve: (frame: ParsedResponse) => void;
   reject: (err: Error) => void;
   timer: ReturnType<typeof setTimeout>;
+  requireCallIndex: boolean;
 }
 
 const DEFAULT_RESPONSE_TIMEOUT_MS = 5_000;
@@ -86,6 +86,7 @@ export class ProtocolClient {
   /** Begins consuming the transport's byte stream and framing responses. The transport must already be connected. */
   start(): void {
     if (this.#running) return;
+    this.#frameReader.reset();
     this.#running = true;
     this.#loopPromise = this.#runLoop();
   }
@@ -103,6 +104,7 @@ export class ProtocolClient {
       this.#loopPromise = null;
     }
     this.#failPending(new ProtocolError('ProtocolClient stopped before a response arrived'));
+    this.#frameReader.reset();
   }
 
   /** Subscribes to every parsed response frame, whether or not it was matched to a pending sendCommand(). Returns an unsubscribe function. */
@@ -165,13 +167,9 @@ export class ProtocolClient {
     if (!pending) return; // No caller is waiting — onFrame listeners already saw it.
 
     const callIndex = frame.kind === 'ok' || frame.kind === 'error' ? frame.callIndex : undefined;
-    if (callIndex !== undefined && callIndex !== pending.callIndex) {
-      // UNVERIFIED: treats a call-index-bearing frame that doesn't match
-      // the outstanding request as an error rather than an
-      // unrelated/unsolicited message to keep waiting past — there is no
-      // confirmed evidence the device ever sends unsolicited messages.
-      // See docs/unknowns.md.
-      this.#settlePending((p) => p.reject(new CallIndexMismatchError(pending.callIndex, callIndex)));
+    if (callIndex !== undefined && callIndex !== pending.callIndex) return;
+    if (callIndex === undefined && pending.requireCallIndex) {
+      // Strict production commands ignore unrelated call-index-less frames.
       return;
     }
 
@@ -198,9 +196,13 @@ export class ProtocolClient {
    * command may be in flight at a time — concurrent calls queue and run
    * in order.
    */
-  async sendCommand(name: string, params?: Record<string, string>): Promise<ParsedResponse> {
+  async sendCommand(
+    name: string,
+    params?: Record<string, string>,
+    options: { readonly requireCallIndex?: boolean } = {},
+  ): Promise<ParsedResponse> {
     if (!this.#running) throw new ProtocolNotStartedError();
-    const task = this.#writeQueue.then(() => this.#sendCommandExclusive(name, params));
+    const task = this.#writeQueue.then(() => this.#sendCommandExclusive(name, params, options.requireCallIndex ?? false));
     this.#writeQueue = task.then(
       () => undefined,
       () => undefined,
@@ -208,7 +210,7 @@ export class ProtocolClient {
     return task;
   }
 
-  async #sendCommandExclusive(name: string, params: Record<string, string> | undefined): Promise<ParsedResponse> {
+  async #sendCommandExclusive(name: string, params: Record<string, string> | undefined, requireCallIndex: boolean): Promise<ParsedResponse> {
     const callIndex = generateCallIndex();
     const line = formatCommandLine(name, params, callIndex);
 
@@ -226,6 +228,7 @@ export class ProtocolClient {
             ),
           );
         }, this.#responseTimeoutMs),
+        requireCallIndex,
       };
     });
 
@@ -247,7 +250,7 @@ export class ProtocolClient {
     let commandUsed: 'get_status' | 'status' = 'get_status';
 
     if (getStatusResponse.kind === 'error') {
-      finalResponse = await this.sendCommand('status');
+      finalResponse = await this.sendCommand('status', undefined, { requireCallIndex: true });
       commandUsed = 'status';
     }
 

@@ -1,12 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { FrameReader } from '../../src/protocol/frame.js';
 import { FrameTooLargeError } from '../../src/protocol/errors.js';
+import { parseResponseFrame } from '../../src/protocol/response.js';
 
 function bytes(text: string): Uint8Array {
   return new TextEncoder().encode(text);
 }
 
 describe('FrameReader', () => {
+  it('drops partial bytes when reset for a fresh protocol session', () => {
+    const reader = new FrameReader();
+    expect(reader.push(bytes('stale-partial'))).toEqual([]);
+    expect(reader.pendingByteCount).toBeGreaterThan(0);
+    reader.reset();
+    expect(reader.pendingByteCount).toBe(0);
+    expect(reader.push(bytes('fresh\n'))).toEqual([bytes('fresh')]);
+  });
   it('returns a complete frame with the LF excluded', () => {
     const reader = new FrameReader();
     const frames = reader.push(bytes('hello\n'));
@@ -72,6 +81,27 @@ describe('FrameReader', () => {
     const frames = reader.push(raw);
     expect(frames).toHaveLength(1);
     expect([...frames[0]!]).toEqual([0x80, 0x80, 0x20, 0x7b, 0x0d, 0x7d, 0x20]);
+  });
+
+  it('preserves the observed CR in a CRLF-terminated JSON frame and parses it successfully', () => {
+    const reader = new FrameReader();
+    const wireBytes = bytes('{"command":"status","serial":"2N2400A5B70F5E3C9251"}\r\n');
+    const expectedRawFrame = wireBytes.slice(0, -1);
+
+    const frames = reader.push(wireBytes);
+
+    expect(frames).toHaveLength(1);
+    expect(frames[0]).toEqual(expectedRawFrame);
+    expect(frames[0]![frames[0]!.length - 1]).toBe(0x0d);
+
+    const parsed = parseResponseFrame(frames[0]!);
+    expect(parsed.kind).toBe('ok');
+    expect(parsed.rawBytes).toBe(frames[0]);
+    expect([...parsed.rawBytes]).toEqual([...expectedRawFrame]);
+    if (parsed.kind === 'ok') {
+      expect(parsed.command).toBe('status');
+      expect(parsed.text.endsWith('\r')).toBe(true);
+    }
   });
 
   it('is synchronous — push() returns frames directly, not a promise', () => {

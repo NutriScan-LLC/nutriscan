@@ -4,59 +4,15 @@ import Link from "next/link";
 import { useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { ArrowRightIcon, CheckCircleIcon } from "@/components/icons";
-import NutriScoreGauge from "@/components/NutriScoreGauge";
+import QuickAoxResultGauge from "@/components/QuickAoxResultGauge";
 import { useAuth } from "@/lib/auth-context";
-import { CARD_FADE_DURATION, CARD_STAGGER, CARDS_FADE_AT, STATUS_FADE_AT, STATUS_FADE_DURATION } from "@/lib/gauge-timing";
-import { getScoreStatus, SCORE_RANGES, type ScoreStatus } from "@/lib/score";
 import { saveSessionResult } from "@/lib/history";
 import { useQuickAoxRun } from "@/lib/quick-aox/run-context";
-
-// One short sentence explaining what the number means (item 6), and one
-// concise suggestion (item 8's recommendation card) — kept separate so each
-// stays short, per status. Not medical advice; see Design-System.md tone
-// guidance (encouraging, scientific, never preachy).
-const STATUS_COPY: Record<ScoreStatus, { explanation: string; recommendation: string }> = {
-  "Needs improvement": {
-    explanation:
-      "Your carotenoid levels are lower than typical for a diet rich in colorful produce.",
-    recommendation:
-      "Add more colorful fruits and vegetables to your meals, then check back in a few weeks.",
-  },
-  Fair: {
-    explanation: "Your carotenoid levels are approaching the optimal range.",
-    recommendation:
-      "A few more servings of colorful produce a week can help move you into the optimal range.",
-  },
-  Optimal: {
-    explanation:
-      "Your carotenoid levels reflect a diet rich in colorful fruits and vegetables.",
-    recommendation:
-      "Keep up your current habits — your carotenoid intake looks right on track.",
-  },
-  "Too high": {
-    explanation:
-      "Your carotenoid levels are higher than typical — often linked to high supplement intake.",
-    recommendation:
-      "Consider moderating carotenoid-rich supplements, and check in with a healthcare provider if this persists.",
-  },
-};
-
-// Small legend swatch colors — representative of each band's position on
-// the gauge's spectrum, not pulled from the gauge itself since these are
-// flat chips rather than a gradient.
-const RANGE_SWATCH: Record<ScoreStatus, string> = {
-  "Needs improvement": "#dc2626",
-  Fair: "#eab308",
-  Optimal: "#16a34a",
-  "Too high": "#ea580c",
-};
 
 export default function ScanResultsPage() {
   const { outcome } = useQuickAoxRun();
   const accepted = outcome?.kind === "accepted" ? outcome : null;
   const score = accepted?.score ?? 0;
-  const status = getScoreStatus(score);
-  const copy = STATUS_COPY[status];
 
   // Authentication happens after the result, not before it — see
   // scan/layout.tsx. A returning signed-in user's result is saved without
@@ -95,78 +51,13 @@ export default function ScanResultsPage() {
         transition={{ duration: 0.4, ease: "easeOut" }}
         className="w-full max-w-md"
       >
-        {/* 1. Page title */}
         <h1 className="text-center text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
-          Your NutriScore
+          Your antioxidant level
         </h1>
 
-        {/* 2-4. Spectrum arc gauge, large score, status label (all inside
-            the shared gauge). `score` is the final value from the start —
-            see NutriScoreGauge's own note on why it's never counted up. */}
-        <div className="mt-6 flex justify-center">
-          <NutriScoreGauge score={score} showSampleTag={false} />
+        <div className="mt-6 rounded-3xl border border-slate-200 bg-white px-7 py-8 shadow-sm">
+          <QuickAoxResultGauge aox={score} />
         </div>
-
-        {/* 6. Explanatory sentence — fades in timed to appear right as the
-            gauge's own status label does. The "What it means" card below
-            already covers the ranges, so there's no status pill here
-            repeating "Optimal"/"Within optimal range" a second time. */}
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: STATUS_FADE_DURATION, delay: STATUS_FADE_AT }}
-          className="mx-auto mt-4 max-w-sm text-center text-sm leading-relaxed text-slate-600"
-        >
-          {copy.explanation}
-        </motion.p>
-
-        {/* 7. Supporting cards fade in last, with a slight stagger. */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: CARD_FADE_DURATION, delay: CARDS_FADE_AT }}
-          className="mt-6 rounded-2xl border border-slate-200 bg-white p-4"
-        >
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            What it means
-          </p>
-          <ul className="mt-3 flex flex-col gap-2">
-            {SCORE_RANGES.map((range) => (
-              <li
-                key={range.status}
-                className={
-                  "flex items-center justify-between rounded-xl px-2.5 py-1.5 text-sm " +
-                  (range.status === status ? "bg-slate-50 font-medium text-slate-900" : "text-slate-500")
-                }
-              >
-                <span className="flex items-center gap-2">
-                  <span
-                    className="h-2.5 w-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: RANGE_SWATCH[range.status] }}
-                  />
-                  {range.status}
-                </span>
-                <span className="tabular-nums text-xs text-slate-400">
-                  {range.min}–{range.max}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: CARD_FADE_DURATION, delay: CARDS_FADE_AT + CARD_STAGGER }}
-          className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4"
-        >
-          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-            Recommendation
-          </p>
-          <p className="mt-1.5 text-sm leading-relaxed text-slate-700">
-            {copy.recommendation}
-          </p>
-        </motion.div>
 
         {authStatus === "signed-in" ? (
           <div className="mt-4 flex items-center justify-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 text-sm text-emerald-800">
@@ -180,7 +71,7 @@ export default function ScanResultsPage() {
             </p>
             <p className="mt-1 text-sm leading-relaxed text-slate-500">
               Sign in or create a free account to save this scan and track
-              your NutriScore over time.
+              your AOX score over time.
             </p>
             <div className="mt-4 flex flex-col gap-2.5 sm:flex-row">
               <Link

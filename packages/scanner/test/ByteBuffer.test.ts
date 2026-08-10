@@ -3,6 +3,14 @@ import { ByteBuffer } from '../src/transport/ByteBuffer.js';
 import { TransportDisconnectedError, TransportTimeoutError } from '../src/transport/errors.js';
 
 describe('ByteBuffer', () => {
+  it('can be reset for a fresh transport session after close', async () => {
+    const buffer = new ByteBuffer();
+    buffer.close();
+    buffer.reset();
+    buffer.append(new Uint8Array([7]));
+    await expect(buffer.waitForData(10)).resolves.toBeUndefined();
+    expect(buffer.readAll()).toEqual(new Uint8Array([7]));
+  });
   it('buffers appended chunks and reports total length', () => {
     const buf = new ByteBuffer();
     buf.append(new Uint8Array([1, 2, 3]));

@@ -33,7 +33,13 @@ export default function ScanInProgressPage() {
     if (outcome) router.replace(outcomePath(outcome.kind));
   }, [event, outcome, router]);
 
-  const status = event?.state === "starting-measurement"
+  const detectingHand = event?.state === "detecting-hand";
+  const removingHand = event?.state === "measurement-complete" || event?.state === "detecting-hand-removal";
+  const status = detectingHand
+    ? "Place your hand on the scanner"
+    : removingHand
+      ? "Remove your hand"
+      : event?.state === "starting-measurement" || event?.state === "hand-detected"
     ? "Starting one AOX measurement…"
     : event?.state === "measurement-started"
       ? "Measurement started — keep your hand still…"
@@ -50,9 +56,11 @@ export default function ScanInProgressPage() {
         transition={{ duration: 0.4, ease: "easeOut" }}
         className="flex w-full max-w-md flex-col items-center text-center"
       >
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">Scanning…</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+          {detectingHand ? "Place your hand on the scanner" : removingHand ? "Remove your hand" : "Hold still — scanning"}
+        </h1>
         <p className="mt-2 text-sm leading-relaxed text-slate-500">
-          Keep your hand still until the scanner finishes the physical measurement.
+          {detectingHand ? "The scanner will detect your hand automatically." : removingHand ? "Results processing begins after removal is confirmed." : "Keep your hand still until all measurement data is validated."}
         </p>
 
         <motion.div

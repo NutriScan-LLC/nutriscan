@@ -104,6 +104,12 @@ export class ByteBuffer {
     this.#length = 0;
   }
 
+  /** Reopens an intentionally closed buffer for a fresh transport session. */
+  reset(): void {
+    this.clear();
+    this.#closed = false;
+  }
+
   #drainWaiters(): void {
     if (this.#length === 0) return;
     for (const waiter of this.#waiters.splice(0)) {

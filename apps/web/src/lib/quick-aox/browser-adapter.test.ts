@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { QuickAoxScoringRequest } from "@nutriscan/scoring/quick-aox";
-import { NutriScanBrowserScoringGateway } from "./browser-gateway";
+import { NutriScanBrowserScoringGateway, NutriScanScoringGatewayError } from "./browser-gateway";
 import { isWebSerialSupported } from "./browser-workflow";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -26,8 +26,50 @@ describe("browser Quick AOX adapters", () => {
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ scannerSerial: "SERIAL-1" }),
+        headers: expect.objectContaining({
+          "X-NutriScan-Client-Request-Id": expect.stringMatching(/^[0-9a-f-]{36}$/),
+        }),
       }),
     );
+  });
+
+  it("binds an injected receiver-sensitive fetch implementation to globalThis", async () => {
+    const raw = { recommended_server: "https://score.example", waiting_time_ms: 10 };
+    const receiverSensitiveFetch = vi.fn(function (
+      this: unknown,
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ): Promise<Response> {
+      if (this !== globalThis) throw new TypeError("Illegal invocation");
+      expect(input).toBe("/api/quick-aox/pre-request");
+      expect(init?.method).toBe("POST");
+      return Promise.resolve(Response.json(raw));
+    }) as unknown as typeof fetch;
+
+    const gateway = new NutriScanBrowserScoringGateway(receiverSensitiveFetch);
+
+    await expect(gateway.preRequest({ scannerSerial: "SERIAL-1" })).resolves.toEqual(raw);
+    expect(receiverSensitiveFetch).toHaveBeenCalledOnce();
+  });
+
+  it("binds the default production fetch implementation to globalThis", async () => {
+    const raw = { recommended_server: "https://score.example", waiting_time_ms: 10 };
+    const receiverSensitiveFetch = vi.fn(function (
+      this: unknown,
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ): Promise<Response> {
+      if (this !== globalThis) throw new TypeError("Illegal invocation");
+      expect(input).toBe("/api/quick-aox/pre-request");
+      expect(init?.method).toBe("POST");
+      return Promise.resolve(Response.json(raw));
+    }) as unknown as typeof fetch;
+    vi.stubGlobal("fetch", receiverSensitiveFetch);
+
+    const gateway = new NutriScanBrowserScoringGateway();
+
+    await expect(gateway.preRequest({ scannerSerial: "SERIAL-1" })).resolves.toEqual(raw);
+    expect(receiverSensitiveFetch).toHaveBeenCalledOnce();
   });
 
   it("routes scoring evidence only through the NutriScan submission endpoint", async () => {
@@ -57,5 +99,72 @@ describe("browser Quick AOX adapters", () => {
     expect(url).toBe("/api/quick-aox/submit");
     expect(String(url)).not.toContain("score.example");
     expect(init?.body).toContain("PRIVATE-BLOCKS");
+  });
+
+  it("preserves only sanitized pre-request diagnostic fields", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(Response.json({
+      error: { diagnosticCode: "UPSTREAM_TLS_FAILURE", status: 502, requestId: "safe-ref" },
+    }, { status: 502 }));
+    const gateway = new NutriScanBrowserScoringGateway(fetchImplementation);
+    const error = await gateway.preRequest({ scannerSerial: "PRIVATE-SERIAL" }).catch((cause: unknown) => cause);
+    expect(error).toBeInstanceOf(NutriScanScoringGatewayError);
+    expect(error).toMatchObject({ diagnosticCode: "UPSTREAM_TLS_FAILURE", status: 502, requestId: "safe-ref" });
+    expect(JSON.stringify(error)).not.toContain("PRIVATE-SERIAL");
+  });
+
+  it("classifies a raw browser fetch rejection without exposing its cause", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockRejectedValue(
+      new Error("private browser network details"),
+    );
+    const gateway = new NutriScanBrowserScoringGateway(fetchImplementation);
+
+    const error = await gateway.preRequest({ scannerSerial: "PRIVATE-SERIAL" }).catch((cause: unknown) => cause);
+    expect(error).toMatchObject({
+      diagnosticCode: "BROWSER_FETCH_REJECTED",
+      status: 0,
+      requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+    });
+    expect(error).not.toHaveProperty("cause");
+    expect(JSON.stringify(error)).not.toContain("private browser network details");
+    expect(JSON.stringify(error)).not.toContain("PRIVATE-SERIAL");
+  });
+
+  it("preserves cancellation instead of classifying it as a fetch rejection", async () => {
+    const controller = new AbortController();
+    const cancellation = new DOMException("cancelled", "AbortError");
+    const fetchImplementation = vi.fn<typeof fetch>().mockImplementation(async () => {
+      controller.abort("user cancellation");
+      throw cancellation;
+    });
+    const gateway = new NutriScanBrowserScoringGateway(fetchImplementation);
+
+    await expect(gateway.preRequest({ scannerSerial: "SERIAL-1", signal: controller.signal }))
+      .rejects.toBe(cancellation);
+  });
+
+  it("classifies a non-diagnostic non-2xx response", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response("development server error page", { status: 502 }),
+    );
+    const gateway = new NutriScanBrowserScoringGateway(fetchImplementation);
+
+    await expect(gateway.preRequest({ scannerSerial: "SERIAL-1" })).rejects.toMatchObject({
+      diagnosticCode: "NUTRISCAN_NON_DIAGNOSTIC_HTTP_ERROR",
+      status: 502,
+      requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+    });
+  });
+
+  it("classifies a successful non-JSON response", async () => {
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response("not json", { status: 200 }),
+    );
+    const gateway = new NutriScanBrowserScoringGateway(fetchImplementation);
+
+    await expect(gateway.preRequest({ scannerSerial: "SERIAL-1" })).rejects.toMatchObject({
+      diagnosticCode: "NUTRISCAN_SUCCESS_NON_JSON",
+      status: 200,
+      requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+    });
   });
 });

@@ -105,7 +105,8 @@
     <p>
       Exercises the SDK's <code>BioZoomScanner</code> API
       (<code>connect</code> / <code>identify</code> / <code>disconnect</code>)
-      against real hardware. No measurement commands. See
+      against real hardware, plus the explicitly UNVERIFIED, manually
+      triggered Experiments M1–M9 and human-gated M15. No production measurement API. See
       <code>BIOZOOM_PROTOCOL_AND_IMPLEMENTATION.md</code> and
       <code>docs/protocol.md</code>.
     </p>
@@ -113,6 +114,41 @@
     <div id="controls">
       <button id="connect">Connect</button>
       <button id="identify" disabled>Identify Scanner</button>
+      <button id="run-m1" disabled>Run Experimental M1 Once</button>
+      <button id="capture-m2" disabled>Capture M2 Status Once</button>
+      <button id="capture-m3" disabled>Capture M3 Post-Bars Status Once</button>
+      <label>
+        M4 measurement:
+        <input id="m4-measurement" type="number" min="1" step="1" value="21" disabled />
+      </label>
+      <button id="read-m4" disabled>Read M4 First Flash Block Once</button>
+      <label>
+        M5 measurement:
+        <input id="m5-measurement" type="number" min="1" step="1" value="21" disabled />
+      </label>
+      <button id="read-m5" disabled>Read M5 Block 1 Once</button>
+      <label>
+        M6 measurement:
+        <input id="m6-measurement" type="number" min="1" step="1" value="21" disabled />
+      </label>
+      <button id="read-m6" disabled>Read M6 Block 2 Once</button>
+      <label>
+        M7 measurement:
+        <input id="m7-measurement" type="number" min="1" step="1" value="21" disabled />
+      </label>
+      <button id="read-m7" disabled>Read M7 Blocks 0–2 Once</button>
+      <label>
+        M8 measurement:
+        <input id="m8-measurement" type="number" min="1" step="1" value="21" disabled />
+      </label>
+      <button id="read-m8" disabled>Read M8 Range 150 Once</button>
+      <label>
+        M9 measurement:
+        <input id="m9-measurement" type="number" min="1" step="1" value="21" disabled />
+      </label>
+      <button id="read-m9" disabled>Read M9 Blocks 150–299 Once</button>
+      <button id="run-m15" disabled>Experiment M15: Hand Is Ready — Start One Live AOX</button>
+      <button id="mark-m15-visible-complete" disabled>Mark M15 Visible Scanner Completion</button>
       <button id="disconnect" disabled>Disconnect</button>
       <button id="clear-log">Clear Log</button>
     </div>

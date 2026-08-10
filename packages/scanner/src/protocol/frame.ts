@@ -70,6 +70,11 @@ export class FrameReader {
   get pendingByteCount(): number {
     return this.#buffer.length;
   }
+
+  /** Drops an incomplete frame when starting a fresh transport session. */
+  reset(): void {
+    this.#buffer = new Uint8Array(0);
+  }
 }
 
 function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {

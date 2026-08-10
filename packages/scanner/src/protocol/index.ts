@@ -19,6 +19,25 @@ export {
 export { formatCommandLine } from './command.js';
 export { generateCallIndex, extractCallIndex } from './callIndex.js';
 export {
+  analyzeM7FlashResponse,
+  analyzeM8FlashResponse,
+  analyzeM9FlashResponse,
+  analyzeM10FlashResponse,
+  analyzeM11FlashResponse,
+  analyzeM12FlashResponse,
+  analyzeM13FlashResponse,
+  analyzeM14FlashResponse,
+  type M7FlashAnalysis,
+  type M8FlashAnalysis,
+  type M9FlashAnalysis,
+  type M10FlashAnalysis,
+  type M11FlashAnalysis,
+  type M12FlashAnalysis,
+  type M13FlashAnalysis,
+  type M14FlashAnalysis,
+  type M7DecodedBlockObservation,
+} from './experimentalM7.js';
+export {
   ProtocolError,
   ProtocolResponseTimeoutError,
   CallIndexMismatchError,
@@ -26,3 +45,36 @@ export {
   ProtocolNotStartedError,
   FrameTooLargeError,
 } from './errors.js';
+export {
+  downloadExperimentalAoxMeasurement,
+  EXPERIMENTAL_AOX_LOGICAL_BLOCK_COUNT,
+  EXPERIMENTAL_AOX_READ_RANGE,
+  type ExperimentalAoxBlock,
+  type ExperimentalAoxAnomaly,
+  type ExperimentalAoxReadRecord,
+  type ExperimentalAoxMeasurementArtifact,
+  type ExperimentalReadFlashRange,
+} from './experimentalMeasurementDownload.js';
+export {
+  CONFIRMED_FULL_AOX_PROFILE,
+  validateAndReassembleAoxBlocks,
+  downloadAndReassembleAoxMeasurement,
+  crc16CcittResidual,
+  AoxAcquisitionTimeoutError,
+  InvalidAoxFlashResponseError,
+  type AoxMeasurementProfile,
+  type RawAoxBlockObservation,
+  type ValidatedAoxBlock,
+  type AoxBlockAnomaly,
+  type AoxBlockAnomalyKind,
+  type LogicalBlockRange,
+  type AoxValidationSummary,
+  type AoxReassemblyResult,
+  type AoxReassemblyOptions,
+  type AoxFlashReadRecord,
+  type AoxAcquisitionStrategy,
+  type DownloadAoxMeasurementOptions,
+  type RawAoxMeasurementArtifact,
+  type ReadAoxFlashRange,
+} from './aoxMeasurement.js';
+export * from './handRecognition.js';
