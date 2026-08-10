@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { fileURLToPath } from "node:url";
 
 const nextConfig: NextConfig = {
   transpilePackages: [
@@ -6,6 +7,9 @@ const nextConfig: NextConfig = {
     "@nutriscan/scoring",
     "@nutriscan/workflows",
   ],
+  turbopack: {
+    root: fileURLToPath(new URL("../..", import.meta.url)),
+  },
 };
 
 export default nextConfig;
