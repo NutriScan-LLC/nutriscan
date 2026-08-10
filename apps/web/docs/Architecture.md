@@ -22,7 +22,7 @@ Vercel
 
 Hardware
 
-WebUSB
+Web Serial
 
 Scanner SDK
 

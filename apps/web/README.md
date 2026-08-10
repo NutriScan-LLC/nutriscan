@@ -71,6 +71,11 @@ project dashboard (Project Settings -> API):
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | client + server | yes (RLS-gated) |
 | `SUPABASE_SERVICE_ROLE_KEY` | server only | **no — never expose** |
 
+Quick AOX scoring also requires `BIOZOOM_QUICK_AOX_BASE_URL`. This variable is
+server-only and supplies the HTTPS base URL for the single BioZoom pre-request.
+It must never use a `NEXT_PUBLIC_` prefix. The browser calls only NutriScan's
+same-origin `/api/quick-aox/pre-request` and `/api/quick-aox/submit` routes.
+
 In production these are set as Vercel Environment Variables, not committed
 to git. `.env.local` is gitignored.
 
@@ -122,7 +127,7 @@ Read these documents in order:
 - TailwindCSS
 - Supabase
 - Vercel
-- WebUSB
+- Web Serial
 - Scanner SDK
 
 ---

@@ -58,7 +58,7 @@ Every screen should have:
 # Architecture Principles
 
 - Keep scanner logic separate from UI.
-- Never communicate directly with WebUSB from React components.
+- Never communicate directly with Web Serial from React components.
 - Reuse components before creating new ones.
 - Use configuration instead of hardcoded customer-specific logic.
 - Build one application that supports many brands.

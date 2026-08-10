@@ -36,17 +36,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthContextValue["status"]>("loading");
 
   useEffect(() => {
-    try {
-      const stored = sessionStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        setUser(JSON.parse(stored) as PlaceholderUser);
-        setStatus("signed-in");
-        return;
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      try {
+        const stored = sessionStorage.getItem(STORAGE_KEY);
+        if (stored) {
+          setUser(JSON.parse(stored) as PlaceholderUser);
+          setStatus("signed-in");
+          return;
+        }
+      } catch {
+        // sessionStorage unavailable — fall through to signed-out.
       }
-    } catch {
-      // sessionStorage unavailable — fall through to signed-out.
-    }
-    setStatus("signed-out");
+      setStatus("signed-out");
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   function persist(nextUser: PlaceholderUser) {

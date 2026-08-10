@@ -1,15 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { ArrowRightIcon, CheckCircleIcon } from "@/components/icons";
 import NutriScoreGauge from "@/components/NutriScoreGauge";
 import { useAuth } from "@/lib/auth-context";
 import { CARD_FADE_DURATION, CARD_STAGGER, CARDS_FADE_AT, STATUS_FADE_AT, STATUS_FADE_DURATION } from "@/lib/gauge-timing";
 import { getScoreStatus, SCORE_RANGES, type ScoreStatus } from "@/lib/score";
-import { scannerService } from "@/services/scanner";
+import { saveSessionResult } from "@/lib/history";
+import { useQuickAoxRun } from "@/lib/quick-aox/run-context";
 
 // One short sentence explaining what the number means (item 6), and one
 // concise suggestion (item 8's recommendation card) — kept separate so each
@@ -52,17 +52,9 @@ const RANGE_SWATCH: Record<ScoreStatus, string> = {
 };
 
 export default function ScanResultsPage() {
-  return (
-    <Suspense fallback={null}>
-      <ScanResults />
-    </Suspense>
-  );
-}
-
-function ScanResults() {
-  const searchParams = useSearchParams();
-  const score = Number(searchParams.get("score") ?? 91);
-  const delta = Number(searchParams.get("delta") ?? 3);
+  const { outcome } = useQuickAoxRun();
+  const accepted = outcome?.kind === "accepted" ? outcome : null;
+  const score = accepted?.score ?? 0;
   const status = getScoreStatus(score);
   const copy = STATUS_COPY[status];
 
@@ -73,20 +65,27 @@ function ScanResults() {
   // save then happens automatically too.
   const { status: authStatus, user } = useAuth();
   const savedRef = useRef(false);
-  const [saved, setSaved] = useState(false);
-
   useEffect(() => {
     if (authStatus !== "signed-in" || savedRef.current) return;
     savedRef.current = true;
-    scannerService.saveResult({ score, delta, capturedAt: new Date().toISOString() });
-    setSaved(true);
-  }, [authStatus, score, delta]);
+    if (!accepted) return;
+    saveSessionResult({ score, capturedAt: accepted.measurementStart.acknowledgedAt });
+  }, [accepted, authStatus, score]);
 
-  const resultsUrl = `/scan/results?${new URLSearchParams({
-    score: String(score),
-    delta: String(delta),
-  }).toString()}`;
+  const resultsUrl = "/scan/results";
   const nextParam = `?next=${encodeURIComponent(resultsUrl)}`;
+
+  if (!accepted) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+        <h1 className="text-2xl font-semibold text-slate-900">No accepted result is available</h1>
+        <p className="mt-2 text-sm text-slate-500">Scan evidence is held in memory and is cleared by a page reload.</p>
+        <Link href="/scan/welcome" className="mt-6 rounded-full bg-emerald-700 px-6 py-3 text-sm font-semibold text-white">
+          Return to scan setup
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-1 justify-center px-6 py-10 sm:items-center sm:py-12">
@@ -172,9 +171,7 @@ function ScanResults() {
         {authStatus === "signed-in" ? (
           <div className="mt-4 flex items-center justify-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 text-sm text-emerald-800">
             <CheckCircleIcon className="h-4 w-4 shrink-0 text-emerald-700" />
-            {saved
-              ? `Saved to ${user?.name ?? "your"} history`
-              : "Saving to your history…"}
+            {`Saved to ${user?.name ?? "your"} history`}
           </div>
         ) : (
           <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-5">

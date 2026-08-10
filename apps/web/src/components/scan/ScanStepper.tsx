@@ -20,7 +20,9 @@ export default function ScanStepper() {
   const pathname = usePathname();
   const activeIndex = Math.max(
     0,
-    STEPS.findIndex((step) => step.path === pathname),
+    pathname === "/scan/outcome"
+      ? STEPS.length - 1
+      : STEPS.findIndex((step) => step.path === pathname),
   );
 
   return (

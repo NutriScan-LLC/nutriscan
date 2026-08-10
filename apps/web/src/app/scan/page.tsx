@@ -11,30 +11,8 @@ import {
   HandIcon,
   SparkleIcon,
   SunIcon,
-  TargetIcon,
 } from "@/components/icons";
-
-// Durations here match the confirmed scan types in docs/Scanner.md
-// ("Quick Scan — 30 seconds", "Precision Scan — 90 seconds") — do not
-// change these without updating that doc first.
-const SCAN_MODES = [
-  {
-    id: "quick" as const,
-    icon: SparkleIcon,
-    label: "Quick Scan",
-    duration: "~30 seconds",
-    durationMs: 30_000,
-    tagline: "Best for everyday use",
-  },
-  {
-    id: "precision" as const,
-    icon: TargetIcon,
-    label: "Precision Scan",
-    duration: "~90 seconds",
-    durationMs: 90_000,
-    tagline: "Best for tracking changes over time",
-  },
-];
+import { useQuickAoxRun } from "@/lib/quick-aox/run-context";
 
 const INSTRUCTIONS = [
   {
@@ -61,16 +39,14 @@ const INSTRUCTIONS = [
 
 export default function ScanInstructionsPage() {
   const router = useRouter();
-  const [mode, setMode] = useState<(typeof SCAN_MODES)[number]["id"]>("quick");
   const [agreed, setAgreed] = useState(false);
+  const { event, running, confirmHandPositioned } = useQuickAoxRun();
+  const ready = running && event?.state === "awaiting-hand-position";
 
   function handleContinue() {
-    const selected = SCAN_MODES.find((m) => m.id === mode)!;
-    const params = new URLSearchParams({
-      mode: selected.id,
-      duration: String(selected.durationMs),
-    });
-    router.push(`/scan/in-progress?${params.toString()}`);
+    if (!ready) return;
+    confirmHandPositioned();
+    router.push("/scan/in-progress");
   }
 
   return (
@@ -128,53 +104,15 @@ export default function ScanInstructionsPage() {
           </div>
         </div>
 
-        <div className="mt-6">
-          <h2 className="text-sm font-semibold text-slate-900">
-            Choose your scan
-          </h2>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            {SCAN_MODES.map(({ id, icon: Icon, label, duration, tagline }, index) => {
-              const selected = mode === id;
-              return (
-                <motion.button
-                  key={id}
-                  type="button"
-                  onClick={() => setMode(id)}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.35, delay: 0.3 + index * 0.08 }}
-                  aria-pressed={selected}
-                  className={
-                    "flex flex-col items-start gap-2 rounded-2xl border p-4 text-left transition-colors " +
-                    (selected
-                      ? "border-emerald-600 bg-emerald-50/70 ring-1 ring-emerald-600"
-                      : "border-slate-200 bg-white hover:border-slate-300")
-                  }
-                >
-                  <span
-                    className={
-                      "flex h-9 w-9 items-center justify-center rounded-full " +
-                      (selected
-                        ? "bg-emerald-600 text-white"
-                        : "bg-emerald-50 text-emerald-700")
-                    }
-                  >
-                    <Icon className="h-4.5 w-4.5" />
-                  </span>
-                  <div>
-                    <p className="flex items-baseline gap-1.5 text-sm font-semibold text-slate-900">
-                      {label}
-                      <span className="text-xs font-medium text-slate-400">
-                        {duration}
-                      </span>
-                    </p>
-                    <p className="mt-0.5 text-xs leading-relaxed text-slate-500">
-                      {tagline}
-                    </p>
-                  </div>
-                </motion.button>
-              );
-            })}
+        <div className="mt-6 flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white">
+            <SparkleIcon className="h-4.5 w-4.5" />
+          </span>
+          <div>
+            <p className="text-sm font-semibold text-slate-900">Quick AOX scan</p>
+            <p className="mt-0.5 text-xs leading-relaxed text-slate-600">
+              One measurement will begin only after you confirm your hand is positioned.
+            </p>
           </div>
         </div>
 
@@ -192,11 +130,11 @@ export default function ScanInstructionsPage() {
 
         <button
           type="button"
-          disabled={!agreed}
+          disabled={!agreed || !ready}
           onClick={handleContinue}
           className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full bg-emerald-700 px-6 py-3.5 text-base font-semibold text-white shadow-sm ring-1 ring-emerald-700/10 transition-all hover:bg-emerald-800 hover:shadow-md disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none disabled:ring-0"
         >
-          Continue
+          Start scan
           <ArrowRightIcon className="h-4 w-4" />
         </button>
       </motion.div>

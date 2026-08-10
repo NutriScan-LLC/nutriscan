@@ -136,7 +136,7 @@ Only the scanner service layer talks to hardware.
 
 Requires Chrome.
 
-Requires WebUSB.
+Requires Web Serial.
 
 No iOS support.
 

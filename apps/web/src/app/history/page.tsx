@@ -8,7 +8,7 @@ import { ArrowRightIcon, CalendarIcon, TrendUpIcon } from "@/components/icons";
 import ProgressChart from "@/components/ProgressChart";
 import { useAuth } from "@/lib/auth-context";
 import { getScoreStatus } from "@/lib/score";
-import { scannerService } from "@/services/scanner";
+import { getSessionHistory } from "@/lib/history";
 
 export default function HistoryPage() {
   const { status, user } = useAuth();
@@ -28,7 +28,7 @@ export default function HistoryPage() {
     );
   }
 
-  const history = scannerService.getHistory();
+  const history = getSessionHistory();
   const latest = history[0];
 
   return (

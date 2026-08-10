@@ -3,11 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "build:workspace-deps": "npm run build --workspace @nutriscan/scanner && npm run build --workspace @nutriscan/scoring && npm run build --workspace @nutriscan/workflows",
+    "predev": "npm run build:workspace-deps",
     "dev": "next dev",
+    "prebuild": "npm run build:workspace-deps",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "pretypecheck": "npm run build:workspace-deps",
     "typecheck": "tsc --noEmit",
+    "pretest": "npm run build:workspace-deps",
     "test": "vitest run"
   },
   "dependencies": {

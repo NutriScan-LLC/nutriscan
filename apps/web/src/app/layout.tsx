@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Header from "@/components/Header";
 import { AuthProvider } from "@/lib/auth-context";
+import { QuickAoxRunProvider } from "@/lib/quick-aox/run-context";
 import "./globals.css";
 
 // Using the system font stack (configured in globals.css) instead of
@@ -24,8 +25,10 @@ export default function RootLayout({
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full flex flex-col bg-white text-slate-900 font-sans">
         <AuthProvider>
-          <Header />
-          {children}
+          <QuickAoxRunProvider>
+            <Header />
+            {children}
+          </QuickAoxRunProvider>
         </AuthProvider>
       </body>
     </html>
