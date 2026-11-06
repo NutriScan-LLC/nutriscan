@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NutriScan Scanner Probe</title>
+<style>
+  :root { --bg:#fff; --fg:#111; --muted:#666; --ok:#0a7d32; --bad:#b3261e; --warn:#a15c00; --card:#f4f4f5; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#eee; --muted:#999; --ok:#4ade80; --bad:#f87171; --warn:#fbbf24; --card:#1c1c1f; } }
+  body { background:var(--bg); color:var(--fg); font:15px/1.4 -apple-system, system-ui, sans-serif; margin:0; padding:16px; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  .muted { color:var(--muted); font-size:13px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin:12px 0; }
+  input { font:inherit; padding:8px; border:1px solid var(--muted); border-radius:6px; background:var(--card); color:var(--fg); }
+  #host { flex:2 1 160px; } #ports { flex:3 1 200px; } #path { flex:3 1 200px; }
+  button { font:inherit; padding:10px 14px; border:0; border-radius:8px; background:#2563eb; color:#fff; }
+  pre { background:var(--card); padding:12px; border-radius:8px; white-space:pre-wrap; word-break:break-word; font-size:12px; max-height:60vh; overflow:auto; }
+  .ok{color:var(--ok)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+</style>
+</head>
+<body>
+<h1>Scanner Probe (Option D test)</h1>
+<div class="muted" id="ctx"></div>
+
+<div class="row">
+  <input id="host" placeholder="Scanner IP e.g. 192.168.4.1" autocapitalize="off" autocorrect="off">
+  <input id="ports" placeholder="Ports, comma-separated" value="80,443,8080,8000,23,5000,9000">
+  <input id="path" placeholder="Command path" value="get_status?call-index=12345">
+</div>
+<div class="row">
+  <button id="run">Run all probes</button>
+  <button id="copy" style="background:#555">Copy log</button>
+</div>
+<pre id="log"></pre>
+
+<script>
+const $ = id => document.getElementById(id);
+const logEl = $('log');
+function log(msg, cls) {
+  const line = document.createElement('span');
+  if (cls) line.className = cls;
+  line.textContent = `[${new Date().toISOString().slice(11,23)}] ${msg}\n`;
+  logEl.appendChild(line);
+}
+$('ctx').textContent = `Page origin: ${location.origin} | secure context: ${window.isSecureContext} | UA: ${navigator.userAgent}`;
+try { const s = localStorage.getItem('probeHost'); if (s) $('host').value = s; } catch {}
+
+function withTimeout(ms) { const c = new AbortController(); const t = setTimeout(() => c.abort(), ms); return { signal: c.signal, done: () => clearTimeout(t) }; }
+
+async function probeFetch(url, mode) {
+  const t0 = performance.now(); const to = withTimeout(6000);
+  try {
+    const r = await fetch(url, { mode, signal: to.signal, cache: 'no-store' });
+    const ms = Math.round(performance.now() - t0);
+    if (r.type === 'opaque') { log(`fetch ${mode} ${url} -> OPAQUE response in ${ms}ms (something answered over HTTP, but CORS hides the body)`, 'warn'); return; }
+    const txt = await r.text();
+    log(`fetch ${mode} ${url} -> HTTP ${r.status} in ${ms}ms, CORS readable. Body: ${txt.slice(0,400)}`, 'ok');
+  } catch (e) {
+    const ms = Math.round(performance.now() - t0);
+    const kind = e.name === 'AbortError' ? 'TIMEOUT (6s)' : `${e.name}: ${e.message}`;
+    log(`fetch ${mode} ${url} -> FAILED after ${ms}ms: ${kind}`, 'bad');
+  } finally { to.done(); }
+}
+
+function probeWs(url, cmd) {
+  return new Promise(resolve => {
+    const t0 = performance.now(); let ws, settled = false;
+    const finish = (msg, cls) => { if (settled) return; settled = true; log(msg, cls); try { ws && ws.close(); } catch {} resolve(); };
+    try { ws = new WebSocket(url); } catch (e) { return finish(`ws ${url} -> THROWN immediately: ${e.name}: ${e.message} (often mixed-content block)`, 'bad'); }
+    const timer = setTimeout(() => finish(`ws ${url} -> TIMEOUT (6s)`, 'bad'), 6000);
+    ws.onopen = () => {
+      log(`ws ${url} -> OPEN in ${Math.round(performance.now()-t0)}ms, sending "${cmd}"`, 'ok');
+      try { ws.send(cmd); } catch (e) { log(`ws send failed: ${e.message}`, 'bad'); }
+      setTimeout(() => { clearTimeout(timer); finish(`ws ${url} -> no message within 3s after open`, 'warn'); }, 3000);
+    };
+    ws.onmessage = ev => { clearTimeout(timer); finish(`ws ${url} -> MESSAGE: ${String(ev.data).slice(0,400)}`, 'ok'); };
+    ws.onerror = () => { clearTimeout(timer); finish(`ws ${url} -> ERROR after ${Math.round(performance.now()-t0)}ms`, 'bad'); };
+  });
+}
+
+$('run').onclick = async () => {
+  const host = $('host').value.trim(); if (!host) { alert('Enter scanner IP'); return; }
+  try { localStorage.setItem('probeHost', host); } catch {}
+  const path = $('path').value.trim().replace(/^\//, '');
+  const ports = $('ports').value.split(',').map(s => s.trim()).filter(Boolean);
+  logEl.textContent = '';
+  log(`Origin ${location.origin}, secureContext=${window.isSecureContext}, host=${host}, ports=${ports.join(',')}`);
+  for (const p of ports) {
+    log(`--- port ${p} ---`);
+    await probeFetch(`http://${host}:${p}/${path}`, 'cors');
+    await probeFetch(`http://${host}:${p}/${path}`, 'no-cors');
+    await probeFetch(`https://${host}:${p}/${path}`, 'no-cors');
+    await probeWs(`ws://${host}:${p}/`, path);
+    await probeWs(`wss://${host}:${p}/`, path);
+  }
+  log('Done. Tap "Copy log" and paste it back to Claude.');
+};
+$('copy').onclick = async () => {
+  try { await navigator.clipboard.writeText(logEl.textContent); $('copy').textContent = 'Copied'; }
+  catch { const r = document.createRange(); r.selectNodeContents(logEl); getSelection().removeAllRanges(); getSelection().addRange(r); }
+};
+</script>
+</body>
+</html>
