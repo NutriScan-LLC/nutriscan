@@ -1,0 +1,12 @@
+{
+  "appId": "com.yournutriscan.app",
+  "appName": "NutriScan",
+  "webDir": "www",
+  "server": {
+    "url": "https://app.yournutriscan.com/scanner-wifi-test",
+    "errorPath": "index.html"
+  },
+  "ios": {
+    "contentInset": "automatic"
+  }
+}
