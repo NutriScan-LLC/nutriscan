@@ -209,3 +209,28 @@ that behavior is supplied, the workflow returns a typed unsupported condition.
 - It remains hardware-unconfirmed whether reproducing the APK's 100 ms initial,
   500 ms result, and 100 ms success-transition delays is sufficient to let this
   scanner enter physical AOX immediately after sampled hand recognition.
+
+# Wi-Fi transport uncertainties (2026-11-06)
+
+- **`/d` scope.** The app sends `/d` before every scan; the response is
+  `Deleted`. What it deletes (previous measurement only? all stored data?) is
+  unknown. `WifiBioZoomScanner` sends it exactly where the app does and stops
+  if it fails.
+- **V2 detection on Wi-Fi.** `WifiBioZoomScanner.identify()` reports V2
+  because this unit was driven via `m?type=aox`; the APK's Wi-Fi V2 decision
+  has not been extracted. Other units may differ.
+- **Timeouts not set by the APK.** `/d` and `/m` have no APK timeout; NutriScan
+  bounds both at 10 s.
+- **Download pacing.** One capture shows the last block readable ~15.7 s after
+  `/m`, ~1.3 s behind the APK's 400 blocks/s estimate. NutriScan uses a 2 s
+  safety margin and 500 ms pause before re-reading missing ranges; tune from
+  more captures.
+- **Legacy hand path.** Firmware with Wi-Fi major < 10 or sensor firmware < 604
+  uses `/signal` + parameterless `/h`; not implemented (fails closed).
+- **Station mode** (`wifi_mode: APSTA`, scanner joining another network) and
+  how to configure it.
+- **Internet during scoring.** On the scanner AP the phone has no internet via
+  Wi-Fi; whether iOS routes the scoring request over cellular is untested.
+- **CapacitorHttp body re-serialization.** The plugin returned parsed JSON;
+  NutriScan re-serializes it, so `ParsedResponse.text`/`rawBytes` are not
+  byte-exact wire data on Wi-Fi.

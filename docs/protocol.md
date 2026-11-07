@@ -518,3 +518,35 @@ After a protocol or acquisition failure, browser recovery closes the serial
 transport, stops the protocol loop, clears partial frame/byte buffers, and then
 reopens the previously authorized port only after another explicit connection
 attempt. This recovery sends no scanner command of its own.
+
+# Wi-Fi HTTP transport (confirmed 2026-11-06)
+
+Evidence: scanner `2E249C6AFCEA6BE8D5FF` (Wi-Fi firmware 20.6.8, sensor 608);
+curl from a Mac on its access point; rvictl/tcpdump capture of one full
+Biozoom-app AOX scan from iOS 18.7; APK `wifi.service.ts` (VitalityCheck
+0.50.107, from `main.js.map`). Full write-up: `BIOZOOM_PROTOCOL_AND_IMPLEMENTATION.md`.
+
+- Access point `biozoomAP_<last4>`, scanner at `http://192.168.4.1`, plain
+  HTTP on port 80, `GET` only, `Access-Control-Allow-Origin: *`. No internet
+  upstream. APK constant `SCANNER_APMODE_URL = 'http://192.168.4.1'`.
+- Unknown paths receive no HTTP response at all.
+- Sequence the Biozoom app sends for Quick AOX:
+  `/status` → `/h?start=110&count=13&cycles=5` (repeat until hand on) → `/d`
+  → `/m?type=aox` (HTTP 202, `measurement_nr`) → `/read-flash?nr=&block=&range=`
+  (streamed during acquisition) → `/status` → `/h?start=134&count=10&cycles=25`
+  (repeat until hand off).
+- `/d` returns `text/plain` `Deleted`.
+- `read-flash` JSON adds `measurement_type`, `data_blocks` (5,773 for full
+  AOX), `data_blocks_index`, `data_blocks_requested`. Blocks not yet written
+  read as 33 bytes of `0xFF`; the app re-polls them.
+- Flash blocks are identical to USB: all 6,450 captured blocks are 33 bytes
+  and pass CRC16-CCITT; the first-block index quirk is present.
+- `/h` data parsed with the existing sampled hand algorithm reproduces the
+  app's decisions on all five captured responses (fixture
+  `packages/scanner/test/fixtures/wifi-hand-capture-2026-11-06.json`).
+- iOS Safari blocks an HTTPS page from calling the scanner (mixed content).
+  A Capacitor app using native HTTP (`CapacitorHttp`) can; `GET /status`
+  confirmed from the NutriScan iOS shell.
+
+Implementation: `HttpTransport` (`FetchHttpTransport`, `CapacitorHttpTransport`),
+`protocol/wifiHttp.ts`, `scanner/WifiBioZoomScanner.ts`.

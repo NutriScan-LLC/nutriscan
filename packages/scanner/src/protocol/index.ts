@@ -79,3 +79,23 @@ export {
   type ReadAoxFlashRange,
 } from './aoxMeasurement.js';
 export * from './handRecognition.js';
+export {
+  WIFI_STATUS_TIMEOUT_MS,
+  WIFI_READY_TIMEOUT_MS,
+  WIFI_READY_RETRY_DELAY_MS,
+  WIFI_DELETE_TIMEOUT_MS,
+  WIFI_MEASURE_TIMEOUT_MS,
+  WIFI_POST_MEASURE_DELAY_MS,
+  WIFI_HAND_TIMEOUT_MS,
+  WIFI_SAMPLED_HAND_MIN_WIFI_MAJOR,
+  WIFI_SAMPLED_HAND_MIN_SENSOR_FIRMWARE,
+  WIFI_ACCESS_POINT_BASE_URL,
+  WIFI_STATUS_PATH,
+  WIFI_DELETE_PATH,
+  WIFI_AOX_MEASURE_PATH,
+  wifiReadFlashPath,
+  wifiReadFlashTimeoutMs,
+  wifiHandPath,
+  parseWifiJsonBody,
+  isHttpSuccess,
+} from './wifiHttp.js';

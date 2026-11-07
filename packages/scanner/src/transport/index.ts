@@ -3,3 +3,13 @@ export { ByteBuffer } from './ByteBuffer.js';
 export { WebSerialTransport, type WebSerialTransportOptions } from './WebSerialTransport.js';
 export { TransportError, TransportTimeoutError, TransportDisconnectedError, TransportNotConnectedError } from './errors.js';
 export { type TransportLogger, type RawByteDirection, noopLogger, consoleLogger, toHex } from './logger.js';
+export {
+  FetchHttpTransport,
+  CapacitorHttpTransport,
+  isCapacitorNativeHttpAvailable,
+  HttpTransportError,
+  HttpTransportTimeoutError,
+  type HttpTransport,
+  type HttpGetOptions,
+  type HttpGetResponse,
+} from './HttpTransport.js';

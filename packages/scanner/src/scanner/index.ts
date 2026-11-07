@@ -15,3 +15,12 @@ export {
   AoxMeasurementStartRejectedError,
   MalformedAoxMeasurementAcknowledgmentError,
 } from './errors.js';
+export {
+  WifiBioZoomScanner,
+  WifiScannerNotReadyError,
+  WifiScannerHttpStatusError,
+  WIFI_DEFAULT_PRODUCTION_SAFETY_MARGIN_MS,
+  WIFI_MISSING_RANGE_RETRY_DELAY_MS,
+  WIFI_READ_FLASH_ATTEMPTS,
+  type WifiBioZoomScannerOptions,
+} from './WifiBioZoomScanner.js';

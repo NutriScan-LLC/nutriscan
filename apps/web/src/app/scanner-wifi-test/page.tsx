@@ -10,12 +10,14 @@
  * we route the request through Capacitor's native HTTP plugin instead, which
  * is not subject to WebView mixed-content rules.
  *
- * Safety: this page can only ever send GET /status. Do not add /m (starts a
- * measurement) or /d (observed to delete stored measurement data) here until
- * their behavior is confirmed with Biozoom.
+ * Safety: the status test only sends GET /status. The full-scan section
+ * (which sends /d and /m) renders only when NEXT_PUBLIC_WIFI_FULL_SCAN_ENABLED
+ * is "true" for the deployment AND the page runs inside the app.
  */
 
-import { useState, useSyncExternalStore } from 'react';
+import { useRef, useState, useSyncExternalStore } from 'react';
+import type { QuickAoxWorkflowEvent, QuickAoxWorkflowOutcome } from '@nutriscan/workflows';
+import { BrowserQuickAoxWifiSession, WIFI_FULL_SCAN_ENABLED } from '@/lib/quick-aox/wifi-browser-workflow';
 
 // The ONLY scanner path this page is allowed to request.
 const STATUS_PATH = '/status';
@@ -207,6 +209,8 @@ export default function ScannerWifiTestPage() {
         </section>
       )}
 
+      {WIFI_FULL_SCAN_ENABLED && env?.native && <FullScanSection onLog={append} />}
+
       <section className="mt-6">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-slate-800">Log</h2>
@@ -223,5 +227,115 @@ export default function ScannerWifiTestPage() {
         </pre>
       </section>
     </main>
+  );
+}
+
+function describeEvent(event: QuickAoxWorkflowEvent): string {
+  switch (event.state) {
+    case 'downloading':
+      return `downloading ${event.validBlocks}/${event.expectedBlocks} blocks (missing ${event.missingBlocks}, reads ${event.readCount})`;
+    case 'measurement-started':
+      return `measurement started #${event.measurementNumber}`;
+    case 'waiting-to-submit':
+      return `waiting ${event.requiredMs} ms before submit`;
+    case 'completed':
+      return `completed: ${event.outcomeKind}`;
+    default:
+      return event.state;
+  }
+}
+
+function describeOutcome(outcome: QuickAoxWorkflowOutcome): string {
+  if (outcome.kind === 'accepted') return `Accepted — AOX score ${outcome.score}`;
+  if (outcome.kind === 'failed') return `Failed (${outcome.failureKind}) during ${outcome.phase}: ${outcome.message}`;
+  if (outcome.kind === 'cancelled') return `Cancelled during ${outcome.phase}`;
+  return `Finished: ${outcome.kind}`;
+}
+
+/** Full Quick AOX scan over Wi-Fi. Rendered only when the deployment flag is on. */
+function FullScanSection({ onLog }: { readonly onLog: (line: string) => void }) {
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [phase, setPhase] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  async function run() {
+    if (running || !acknowledged) return;
+    setRunning(true);
+    setOutcome(null);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    let lastDownloadLog = 0;
+    const session = new BrowserQuickAoxWifiSession({
+      onRequest: (e) => {
+        // read-flash fires ~4x/second; log every request but keep lines short.
+        onLog(`HTTP ${e.path} -> ${e.status ?? e.error ?? 'error'} (${e.durationMs} ms)`);
+      },
+    });
+    onLog('--- full Quick AOX scan (Wi-Fi) ---');
+    try {
+      const result = await session.workflow.run({
+        language: 'en',
+        createUuid: () => crypto.randomUUID(),
+        signal: controller.signal,
+        // Tapping "Run full scan" is the begin confirmation.
+        waitForBegin: async () => {},
+        onProgress: (event) => {
+          setPhase(event.state);
+          if (event.state === 'downloading') {
+            const now = Date.now();
+            if (now - lastDownloadLog < 1000) return;
+            lastDownloadLog = now;
+          }
+          onLog(`event: ${describeEvent(event)}`);
+        },
+        disconnectOnFinish: true,
+      });
+      const text = describeOutcome(result);
+      setOutcome(text);
+      onLog(`OUTCOME: ${text}`);
+    } catch (cause) {
+      const text = cause instanceof Error ? cause.message : String(cause);
+      setOutcome(`Error: ${text}`);
+      onLog(`ERROR: ${text}`);
+    } finally {
+      abortRef.current = null;
+      setRunning(false);
+      await session.disconnect().catch(() => {});
+    }
+  }
+
+  return (
+    <section className="mt-8 rounded-2xl border border-amber-300 bg-amber-50 p-4">
+      <h2 className="font-semibold text-amber-900">Full Quick AOX scan (Wi-Fi)</h2>
+      <p className="mt-2 text-sm text-amber-900">
+        Repeats the Biozoom app&apos;s exact sequence: hand check, <code>/d</code> (clears data stored on the scanner — scope not
+        confirmed), <code>/m</code> (starts the measurement), download, then scoring through NutriScan. Scoring needs internet, so keep
+        cellular data on. Use the demo scanner only.
+      </p>
+      <label className="mt-3 flex items-start gap-2 text-sm text-amber-900">
+        <input type="checkbox" checked={acknowledged} onChange={(e) => setAcknowledged(e.target.checked)} className="mt-1" />
+        <span>I understand this clears stored data on the scanner and starts a real measurement.</span>
+      </label>
+      <div className="mt-3 flex gap-3">
+        <button
+          type="button"
+          onClick={() => void run()}
+          disabled={running || !acknowledged}
+          className="flex-1 rounded-full bg-amber-700 px-6 py-3 font-semibold text-white disabled:bg-slate-300"
+        >
+          {running ? `Running… ${phase ?? ''}` : 'Run full scan'}
+        </button>
+        {running && (
+          <button type="button" onClick={() => abortRef.current?.abort()} className="rounded-full border border-amber-700 px-5 py-3 font-semibold text-amber-800">
+            Cancel
+          </button>
+        )}
+      </div>
+      {running && phase === 'detecting-hand' && <p className="mt-3 text-sm font-semibold text-amber-900">Place your hand on the scanner.</p>}
+      {running && phase === 'detecting-hand-removal' && <p className="mt-3 text-sm font-semibold text-amber-900">You can lift your hand now.</p>}
+      {outcome && <p className="mt-3 rounded-xl bg-white p-3 text-sm font-semibold text-slate-900">{outcome}</p>}
+    </section>
   );
 }
