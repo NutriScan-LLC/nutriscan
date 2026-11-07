@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import { AlertTriangleIcon, ArrowRightIcon } from "@/components/icons";
 import { DEFAULT_QUICK_AOX_PRESENTATION } from "@nutriscan/scoring/quick-aox";
@@ -11,7 +12,7 @@ import { formatSafeScannerDiagnostic } from "@/lib/scanner-session-diagnostic";
 
 export default function ScanOutcomePage() {
   const router = useRouter();
-  const { event, outcome, running, clearCompletedRun, diagnostic } = useQuickAoxRun();
+  const { event, outcome, running, clearCompletedRun, diagnostic, connection, wifiLog } = useQuickAoxRun();
 
   useEffect(() => {
     if (event?.state === "awaiting-begin") router.replace("/scan");
@@ -55,6 +56,17 @@ export default function ScanOutcomePage() {
             <summary className="cursor-pointer text-xs font-semibold text-slate-600">Sanitized scanner diagnostic</summary>
             <textarea aria-label="Sanitized scanner diagnostic" readOnly value={formatSafeScannerDiagnostic(diagnostic)} className="mt-2 h-48 w-full rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-[10px] text-slate-600" />
             <button type="button" onClick={() => void navigator.clipboard.writeText(formatSafeScannerDiagnostic(diagnostic))} className="mt-2 text-xs font-semibold text-emerald-700">Copy sanitized diagnostic</button>
+          </details>
+        )}
+
+        {connection === "wifi" && wifiLog.length > 0 && (
+          <details className="mt-4 text-left">
+            <summary className="cursor-pointer text-xs font-semibold text-slate-600">Wi-Fi scan log</summary>
+            <textarea aria-label="Wi-Fi scan log" readOnly value={wifiLog.join("\n")} className="mt-2 h-48 w-full rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-[10px] text-slate-600" />
+            <div className="mt-2 flex items-center justify-between">
+              <button type="button" onClick={() => void navigator.clipboard.writeText(wifiLog.join("\n"))} className="text-xs font-semibold text-emerald-700">Copy Wi-Fi log</button>
+              <Link href="/scanner-wifi-test" className="text-xs font-semibold text-slate-500 underline">Wi-Fi diagnostics</Link>
+            </div>
           </details>
         )}
 

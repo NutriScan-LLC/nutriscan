@@ -25,6 +25,8 @@ type QuickAoxRunContextValue = {
   capability: Capability;
   /** Which transport this device will use; null while checking or when unsupported. */
   connection: ScannerConnection | null;
+  /** Wi-Fi only: per-request and per-step log of the current/last run, for copy-paste diagnostics. */
+  wifiLog: readonly string[];
   event: QuickAoxWorkflowEvent | null;
   outcome: QuickAoxWorkflowOutcome | null;
   running: boolean;
@@ -43,6 +45,14 @@ const QuickAoxRunContext = createContext<QuickAoxRunContextValue | null>(null);
 export function QuickAoxRunProvider({ children }: { children: ReactNode }) {
   const [capability, setCapability] = useState<Capability>("checking");
   const [connection, setConnection] = useState<ScannerConnection | null>(null);
+  const [wifiLog, setWifiLog] = useState<readonly string[]>([]);
+  const wifiLogRef = useRef<string[]>([]);
+  // Stable (refs + state setter only) so a reused session's callback keeps working.
+  const appendWifiLog = useCallback((line: string) => {
+    const stamped = `[${new Date().toISOString().slice(11, 23)}] ${line}`;
+    wifiLogRef.current = [...wifiLogRef.current.slice(-499), stamped];
+    setWifiLog(wifiLogRef.current);
+  }, []);
   const [event, setEvent] = useState<QuickAoxWorkflowEvent | null>(null);
   const [outcome, setOutcome] = useState<QuickAoxWorkflowOutcome | null>(null);
   const [running, setRunning] = useState(false);
@@ -81,9 +91,29 @@ export function QuickAoxRunProvider({ children }: { children: ReactNode }) {
     setRunning(true);
     setRecoveryRequired(false);
 
+    if (detected === "wifi") {
+      wifiLogRef.current = [];
+      setWifiLog([]);
+      appendWifiLog("--- Quick AOX scan (Wi-Fi) ---");
+    }
     const session: QuickAoxBrowserSession = sessionRef.current ?? (detected === "wifi"
-      ? new BrowserQuickAoxWifiSession()
+      ? new BrowserQuickAoxWifiSession({
+        onRequest: (e) => appendWifiLog(`HTTP ${e.path} -> ${e.status ?? e.error ?? "error"} (${e.durationMs} ms)`),
+      })
       : new BrowserQuickAoxSession(undefined, setDiagnostic));
+    let lastDownloadLog = 0;
+    const onProgress = (progress: QuickAoxWorkflowEvent) => {
+      setEvent(progress);
+      if (detected !== "wifi") return;
+      if (progress.state === "downloading") {
+        const now = Date.now();
+        if (now - lastDownloadLog < 1000) return;
+        lastDownloadLog = now;
+        appendWifiLog(`event: downloading ${progress.validBlocks}/${progress.expectedBlocks}`);
+        return;
+      }
+      appendWifiLog(`event: ${progress.state}`);
+    };
     sessionRef.current = session;
     session.startDiagnosticRun();
     const workflow = session.workflow;
@@ -104,10 +134,14 @@ export function QuickAoxRunProvider({ children }: { children: ReactNode }) {
         beginRef.current = confirm;
         signal?.addEventListener("abort", onAbort, { once: true });
       }),
-      onProgress: setEvent,
+      onProgress,
       disconnectOnFinish: false,
     }).then(async (completedOutcome) => {
       if (!runGuardRef.current.isCurrent(guardRunId)) return;
+      if (detected === "wifi") {
+        appendWifiLog(`OUTCOME: ${completedOutcome.kind}${completedOutcome.kind === "failed" ? ` (${completedOutcome.failureKind}, ${completedOutcome.phase}): ${completedOutcome.message}` : ""}`);
+        if (completedOutcome.kind === "failed") appendWifiLog(`cause: ${describeCause(completedOutcome.cause)}`);
+      }
       if (requiresSerialRecovery(completedOutcome)) {
         await session.recoverConnection().catch(() => {});
         if (!runGuardRef.current.isCurrent(guardRunId)) return;
@@ -135,7 +169,7 @@ export function QuickAoxRunProvider({ children }: { children: ReactNode }) {
       runGuardRef.current.finish(guardRunId);
     });
     runGuardRef.current.attach(guardRunId, settlement);
-  }, []);
+  }, [appendWifiLog]);
 
   const beginScan = useCallback(() => {
     beginRef.current?.();
@@ -167,6 +201,7 @@ export function QuickAoxRunProvider({ children }: { children: ReactNode }) {
     <QuickAoxRunContext.Provider value={{
       capability,
       connection,
+      wifiLog,
       event,
       outcome,
       running,
@@ -188,4 +223,13 @@ export function useQuickAoxRun(): QuickAoxRunContextValue {
   const context = useContext(QuickAoxRunContext);
   if (!context) throw new Error("useQuickAoxRun must be used within QuickAoxRunProvider");
   return context;
+}
+
+function describeCause(cause: unknown, depth = 0): string {
+  if (depth > 3) return "…";
+  if (cause instanceof Error) {
+    const inner = (cause as Error & { cause?: unknown }).cause;
+    return `${cause.name}: ${cause.message}${inner === undefined ? "" : ` <- ${describeCause(inner, depth + 1)}`}`;
+  }
+  try { return JSON.stringify(cause); } catch { return String(cause); }
 }

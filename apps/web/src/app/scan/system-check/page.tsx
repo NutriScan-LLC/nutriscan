@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangleIcon,
@@ -111,6 +112,7 @@ export default function ScanSystemCheckPage() {
             <li>In Settings → Wi-Fi, join the network that starts with <span className="font-mono">biozoomAP_</span>.</li>
             <li>Come back here and tap Connect scanner.</li>
           </ol>
+          <Link href="/scanner-wifi-test" className="mt-2 inline-block text-xs font-semibold text-sky-800 underline">Wi-Fi diagnostics</Link>
         </div>
       )}
 
