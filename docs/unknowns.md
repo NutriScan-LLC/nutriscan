@@ -229,8 +229,9 @@ that behavior is supplied, the workflow returns a typed unsupported condition.
   uses `/signal` + parameterless `/h`; not implemented (fails closed).
 - **Station mode** (`wifi_mode: APSTA`, scanner joining another network) and
   how to configure it.
-- **Internet during scoring.** On the scanner AP the phone has no internet via
-  Wi-Fi; whether iOS routes the scoring request over cellular is untested.
+- **Internet during scoring.** Resolved for iOS with cellular on (2026-11-06):
+  scoring succeeded while the phone stayed on the scanner AP. Untested with
+  cellular off or on Android.
 - **CapacitorHttp body re-serialization.** The plugin returned parsed JSON;
   NutriScan re-serializes it, so `ParsedResponse.text`/`rawBytes` are not
   byte-exact wire data on Wi-Fi.

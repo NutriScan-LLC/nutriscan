@@ -550,3 +550,12 @@ Biozoom-app AOX scan from iOS 18.7; APK `wifi.service.ts` (VitalityCheck
 
 Implementation: `HttpTransport` (`FetchHttpTransport`, `CapacitorHttpTransport`),
 `protocol/wifiHttp.ts`, `scanner/WifiBioZoomScanner.ts`.
+
+## First end-to-end Wi-Fi Quick AOX (confirmed 2026-11-06)
+
+`WifiBioZoomScanner` + `QuickAoxWorkflow` in the NutriScan iOS shell, phone on
+`biozoomAP_D5FF` with cellular on: hand-on (3rd `/h`) → `/d` → `/m?type=aox`
+(#135) → 39 `read-flash` requests, all 5,773 blocks valid first pass, zero
+retries → hand-off (3rd `/h`) → pre-request + submit via NutriScan backend over
+cellular → `accepted`, `aox` 5. About 30 s total. Production requires the
+server-only `BIOZOOM_QUICK_AOX_BASE_URL`.
