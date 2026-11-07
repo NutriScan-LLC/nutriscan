@@ -163,6 +163,22 @@ describe('WifiBioZoomScanner hand recognition', () => {
     expect(removed).toEqual([false, true]);
   });
 
+  it('retries the status read before hand-off detection', async () => {
+    let statusCalls = 0;
+    const http = new FakeHttp((path) => {
+      if (path === '/status') {
+        statusCalls++;
+        if (statusCalls === 3 || statusCalls === 4) throw new HttpTransportError('dropped', '/status');
+        return ok(STATUS);
+      }
+      throw new Error(`unexpected ${path}`);
+    });
+    const scanner = new WifiBioZoomScanner(http, { wait: noWait });
+    await scanner.connect(); await scanner.identify();
+    await expect(scanner.prepareHandRecognition('removed')).resolves.toBeUndefined();
+    expect(statusCalls).toBe(5);
+  });
+
   it('treats a failed /h request as "not yet" (APK behavior)', async () => {
     const { scanner } = await identified(() => { throw new HttpTransportError('timeout', '/h'); });
     await scanner.prepareHandRecognition('present');

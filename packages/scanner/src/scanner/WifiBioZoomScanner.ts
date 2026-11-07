@@ -48,6 +48,8 @@ import {
 export const WIFI_DEFAULT_PRODUCTION_SAFETY_MARGIN_MS = 2_000;
 /** Pause before re-reading a still-missing range (UNVERIFIED; APK simply re-polls every loop). */
 export const WIFI_MISSING_RANGE_RETRY_DELAY_MS = 500;
+/** Attempts for the status read before hand recognition. */
+export const WIFI_STATUS_ATTEMPTS = 4;
 /** Attempts per read-flash request on transport failure (APK retries indefinitely; we bound it). */
 export const WIFI_READ_FLASH_ATTEMPTS = 3;
 
@@ -236,7 +238,7 @@ export class WifiBioZoomScanner {
    */
   async prepareHandRecognition(target: HandRecognitionTarget): Promise<void> {
     this.#requireIdentified();
-    const status = await this.#getJson(WIFI_STATUS_PATH, WIFI_STATUS_TIMEOUT_MS);
+    const status = await this.#statusWithRetry();
     if (status.kind !== 'ok') throw new UnsupportedHandRecognitionFirmwareError('A valid Wi-Fi status response is required for hand recognition');
     const wifiFirmware = typeof status.json.wifi_firmware === 'string' ? status.json.wifi_firmware : '';
     const major = Number(wifiFirmware.split('.')[0] ?? '0');
@@ -262,6 +264,25 @@ export class WifiBioZoomScanner {
     const parsed = parseWifiJsonBody(response.bodyText);
     if (parsed.kind !== 'ok') return false;
     return parseSampledHandRecognition(parsed.json.data, target);
+  }
+
+  /**
+   * GET /status with a few retries. The hand-off check follows ~16 s of
+   * read-flash traffic; a single dropped request there would otherwise throw
+   * away a complete measurement. The APK has no equivalent retry (its status
+   * call precedes the scan), so this is a NutriScan robustness choice.
+   */
+  async #statusWithRetry(): Promise<ParsedResponse> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= WIFI_STATUS_ATTEMPTS; attempt++) {
+      try {
+        return await this.#getJson(WIFI_STATUS_PATH, WIFI_STATUS_TIMEOUT_MS);
+      } catch (cause) {
+        lastError = cause;
+        if (attempt < WIFI_STATUS_ATTEMPTS) await this.#wait(WIFI_READY_RETRY_DELAY_MS);
+      }
+    }
+    throw lastError;
   }
 
   async #readFlash(measurementNumber: number, start: number, range: number, signal?: AbortSignal): Promise<ParsedResponse> {

@@ -21,9 +21,12 @@ export default function ScanInProgressPage() {
   const router = useRouter();
   const { event, outcome, running, cancel } = useQuickAoxRun();
   const downloading = event?.state === "downloading" ? event : null;
-  const percent = downloading && downloading.expectedBlocks > 0
-    ? Math.round((downloading.validBlocks / downloading.expectedBlocks) * 100)
-    : 0;
+  const downloadFinished = event?.state === "measurement-complete" || event?.state === "detecting-hand-removal" || event?.state === "hand-removed";
+  const percent = downloadFinished
+    ? 100
+    : downloading && downloading.expectedBlocks > 0
+      ? Math.round((downloading.validBlocks / downloading.expectedBlocks) * 100)
+      : 0;
 
   useEffect(() => {
     if (event && SCORING_STATES.has(event.state)) {

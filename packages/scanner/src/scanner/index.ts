@@ -22,5 +22,6 @@ export {
   WIFI_DEFAULT_PRODUCTION_SAFETY_MARGIN_MS,
   WIFI_MISSING_RANGE_RETRY_DELAY_MS,
   WIFI_READ_FLASH_ATTEMPTS,
+  WIFI_STATUS_ATTEMPTS,
   type WifiBioZoomScannerOptions,
 } from './WifiBioZoomScanner.js';
