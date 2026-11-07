@@ -3,7 +3,7 @@
   "appName": "NutriScan",
   "webDir": "www",
   "server": {
-    "url": "https://app.yournutriscan.com/scanner-wifi-test",
+    "url": "https://app.yournutriscan.com",
     "errorPath": "index.html"
   },
   "ios": {

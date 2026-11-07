@@ -47,7 +47,17 @@ export class BrowserQuickAoxWifiSession {
     this.workflow = new QuickAoxWorkflow({ scanner, scoring: new NutriScanBrowserScoringGateway() });
   }
 
+  /** Parity with BrowserQuickAoxSession; Wi-Fi has no serial protocol diagnostics yet. */
+  startDiagnosticRun(): string {
+    return crypto.randomUUID();
+  }
+
   async disconnect(): Promise<void> {
+    await this.scanner.disconnect();
+  }
+
+  /** Nothing to reopen over HTTP; clears scanner session state. */
+  async recoverConnection(): Promise<void> {
     await this.scanner.disconnect();
   }
 }

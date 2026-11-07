@@ -13,10 +13,9 @@ import type {
   QuickAoxWorkflowEvent,
   QuickAoxWorkflowOutcome,
 } from "@nutriscan/workflows";
-import {
-  BrowserQuickAoxSession,
-  isWebSerialSupported,
-} from "./browser-workflow";
+import { BrowserQuickAoxSession } from "./browser-workflow";
+import { BrowserQuickAoxWifiSession } from "./wifi-browser-workflow";
+import { detectScannerConnection, type QuickAoxBrowserSession, type ScannerConnection } from "./scanner-connection";
 import { requiresSerialRecovery } from "./retry-policy";
 import { ScannerRunGuard, type SafeScannerDiagnosticReport } from "../scanner-session-diagnostic";
 
@@ -24,6 +23,8 @@ type Capability = "checking" | "supported" | "unsupported";
 
 type QuickAoxRunContextValue = {
   capability: Capability;
+  /** Which transport this device will use; null while checking or when unsupported. */
+  connection: ScannerConnection | null;
   event: QuickAoxWorkflowEvent | null;
   outcome: QuickAoxWorkflowOutcome | null;
   running: boolean;
@@ -41,20 +42,24 @@ const QuickAoxRunContext = createContext<QuickAoxRunContextValue | null>(null);
 
 export function QuickAoxRunProvider({ children }: { children: ReactNode }) {
   const [capability, setCapability] = useState<Capability>("checking");
+  const [connection, setConnection] = useState<ScannerConnection | null>(null);
   const [event, setEvent] = useState<QuickAoxWorkflowEvent | null>(null);
   const [outcome, setOutcome] = useState<QuickAoxWorkflowOutcome | null>(null);
   const [running, setRunning] = useState(false);
   const [recoveryRequired, setRecoveryRequired] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const beginRef = useRef<(() => void) | null>(null);
-  const sessionRef = useRef<BrowserQuickAoxSession | null>(null);
+  const sessionRef = useRef<QuickAoxBrowserSession | null>(null);
   const runGuardRef = useRef(new ScannerRunGuard());
   const [diagnostic, setDiagnostic] = useState<SafeScannerDiagnosticReport | null>(null);
 
   useEffect(() => {
     let active = true;
     queueMicrotask(() => {
-      if (active) setCapability(isWebSerialSupported() ? "supported" : "unsupported");
+      if (!active) return;
+      const detected = detectScannerConnection();
+      setConnection(detected);
+      setCapability(detected ? "supported" : "unsupported");
     });
     return () => {
       active = false;
@@ -64,7 +69,8 @@ export function QuickAoxRunProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const startRun = useCallback(() => {
-    if (!isWebSerialSupported()) return;
+    const detected = detectScannerConnection();
+    if (!detected) return;
     const guardRunId = crypto.randomUUID();
     if (!runGuardRef.current.tryStart(guardRunId)) return;
     const abortController = new AbortController();
@@ -75,7 +81,9 @@ export function QuickAoxRunProvider({ children }: { children: ReactNode }) {
     setRunning(true);
     setRecoveryRequired(false);
 
-    const session = sessionRef.current ?? new BrowserQuickAoxSession(undefined, setDiagnostic);
+    const session: QuickAoxBrowserSession = sessionRef.current ?? (detected === "wifi"
+      ? new BrowserQuickAoxWifiSession()
+      : new BrowserQuickAoxSession(undefined, setDiagnostic));
     sessionRef.current = session;
     session.startDiagnosticRun();
     const workflow = session.workflow;
@@ -158,6 +166,7 @@ export function QuickAoxRunProvider({ children }: { children: ReactNode }) {
   return (
     <QuickAoxRunContext.Provider value={{
       capability,
+      connection,
       event,
       outcome,
       running,
