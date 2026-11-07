@@ -51,8 +51,25 @@ export function interpretHandRecognitionResponse(response: ParsedResponse, targe
   return parseSampledHandRecognition(response.json.data, target);
 }
 
+export interface SampledHandMetrics {
+  readonly dark: number;
+  readonly near: number;
+  readonly middle: number;
+  readonly far: number;
+}
+
 export function parseSampledHandRecognition(input: unknown, target: HandRecognitionTarget): boolean {
-  if (!Array.isArray(input)) return false;
+  const metrics = computeSampledHandMetrics(input, target);
+  return metrics === null ? false : interpretSampledHandMetrics(metrics, target);
+}
+
+/**
+ * Diagnostic split of parseSampledHandRecognition(): the averaged channel
+ * metrics the APK thresholds are applied to, or null when the sample is
+ * malformed (wrong length, bad Base64/CRC). Behavior is unchanged.
+ */
+export function computeSampledHandMetrics(input: unknown, target: HandRecognitionTarget): SampledHandMetrics | null {
+  if (!Array.isArray(input)) return null;
   const removed = target === 'removed';
   const cycles = removed ? 25 : 5;
   const dicts = removed ? HAND_OFF_LEDS : HAND_ON_LEDS;
@@ -60,13 +77,13 @@ export function parseSampledHandRecognition(input: unknown, target: HandRecognit
   const parsed: number[][] = [];
   for (let i = cycles + 1; i < input.length; i += cycles + 2) {
     const value = input[i];
-    if (typeof value !== 'string') return false;
+    if (typeof value !== 'string') return null;
     const bytes = decode(value);
-    if (!bytes || bytes.length < 29 || ((bytes[0]! << 8) | bytes[1]!) !== bytes.length - 2 || crc16CcittResidual(bytes.subarray(2)) !== 0) return false;
+    if (!bytes || bytes.length < 29 || ((bytes[0]! << 8) | bytes[1]!) !== bytes.length - 2 || crc16CcittResidual(bytes.subarray(2)) !== 0) return null;
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     parsed.push(Array.from({ length: 8 }, (_, channel) => view.getUint16(5 + 3 * channel, true)));
   }
-  if (parsed.length !== dicts.length) return false;
+  if (parsed.length !== dicts.length) return null;
   const sums = { dark: 0, near: 0, middle: 0, far: 0 };
   const counts = { dark: 0, near: 0, middle: 0, far: 0 };
   parsed.forEach((values, index) => {
@@ -82,7 +99,7 @@ export function parseSampledHandRecognition(input: unknown, target: HandRecognit
   const near = Math.max(1, sums.near / counts.near);
   const middle = Math.max(1, sums.middle / counts.middle);
   const far = Math.max(1, sums.far / counts.far);
-  return interpretSampledHandMetrics({ dark, near, middle, far }, target);
+  return { dark, near, middle, far };
 }
 
 export function interpretSampledHandMetrics(

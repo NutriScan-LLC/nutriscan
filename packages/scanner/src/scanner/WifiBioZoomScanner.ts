@@ -7,8 +7,10 @@ import {
   type RawAoxMeasurementArtifact,
 } from '../protocol/aoxMeasurement.js';
 import {
-  parseSampledHandRecognition,
+  computeSampledHandMetrics,
+  interpretSampledHandMetrics,
   UnsupportedHandRecognitionFirmwareError,
+  type SampledHandMetrics,
   type HandRecognitionTarget,
 } from '../protocol/handRecognition.js';
 import {
@@ -73,6 +75,8 @@ export interface WifiBioZoomScannerOptions {
   readonly now?: () => Date;
   /** Diagnostic hook: path, HTTP status, duration. Never receives bodies. */
   readonly onRequest?: (event: { readonly path: string; readonly status: number | null; readonly durationMs: number; readonly error?: string }) => void;
+  /** Diagnostic hook: averaged channel metrics behind each hand decision (null = malformed sample). */
+  readonly onHandSample?: (event: { readonly target: HandRecognitionTarget; readonly metrics: SampledHandMetrics | null; readonly recognized: boolean }) => void;
 }
 
 /**
@@ -91,6 +95,7 @@ export class WifiBioZoomScanner {
   readonly #wait: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
   readonly #now: () => Date;
   readonly #onRequest: WifiBioZoomScannerOptions['onRequest'];
+  readonly #onHandSample: WifiBioZoomScannerOptions['onHandSample'];
 
   #connected = false;
   #identity: ScannerIdentity | null = null;
@@ -102,6 +107,7 @@ export class WifiBioZoomScanner {
     this.#wait = options.wait ?? abortableWait;
     this.#now = options.now ?? (() => new Date());
     this.#onRequest = options.onRequest;
+    this.#onHandSample = options.onHandSample;
   }
 
   get isConnected(): boolean { return this.#connected; }
@@ -263,7 +269,10 @@ export class WifiBioZoomScanner {
     if (!isHttpSuccess(response.status)) return false;
     const parsed = parseWifiJsonBody(response.bodyText);
     if (parsed.kind !== 'ok') return false;
-    return parseSampledHandRecognition(parsed.json.data, target);
+    const metrics = computeSampledHandMetrics(parsed.json.data, target);
+    const recognized = metrics === null ? false : interpretSampledHandMetrics(metrics, target);
+    try { this.#onHandSample?.({ target, metrics, recognized }); } catch { /* diagnostics never affect sequencing */ }
+    return recognized;
   }
 
   /**

@@ -99,6 +99,9 @@ export function QuickAoxRunProvider({ children }: { children: ReactNode }) {
     const session: QuickAoxBrowserSession = sessionRef.current ?? (detected === "wifi"
       ? new BrowserQuickAoxWifiSession({
         onRequest: (e) => appendWifiLog(`HTTP ${e.path} -> ${e.status ?? e.error ?? "error"} (${e.durationMs} ms)`),
+        onHandSample: (h) => appendWifiLog(h.metrics
+          ? `hand ${h.target}: ${h.recognized ? "YES" : "no"} dark=${h.metrics.dark.toFixed(2)} near=${h.metrics.near.toFixed(1)} middle=${h.metrics.middle.toFixed(1)} far=${h.metrics.far.toFixed(1)} near/far=${(h.metrics.near / h.metrics.far).toFixed(2)} near/middle=${(h.metrics.near / h.metrics.middle).toFixed(2)}`
+          : `hand ${h.target}: malformed sample`),
       })
       : new BrowserQuickAoxSession(undefined, setDiagnostic));
     let lastDownloadLog = 0;

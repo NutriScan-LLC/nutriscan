@@ -3,6 +3,7 @@ import {
   isCapacitorNativeHttpAvailable,
   WifiBioZoomScanner,
   WIFI_ACCESS_POINT_BASE_URL,
+  type WifiBioZoomScannerOptions,
 } from "@nutriscan/scanner";
 import { QuickAoxWorkflow, type QuickAoxScanner } from "@nutriscan/workflows";
 import { NutriScanBrowserScoringGateway } from "./browser-gateway";
@@ -39,9 +40,16 @@ export class BrowserQuickAoxWifiSession {
   readonly workflow: QuickAoxWorkflow;
   readonly scanner: WifiBioZoomScanner;
 
-  constructor(options: { readonly baseUrl?: string; readonly onRequest?: (event: WifiRequestEvent) => void } = {}) {
+  constructor(options: {
+    readonly baseUrl?: string;
+    readonly onRequest?: (event: WifiRequestEvent) => void;
+    readonly onHandSample?: WifiBioZoomScannerOptions["onHandSample"];
+  } = {}) {
     const transport = new CapacitorHttpTransport({ baseUrl: options.baseUrl ?? WIFI_ACCESS_POINT_BASE_URL });
-    this.scanner = new WifiBioZoomScanner(transport, options.onRequest ? { onRequest: options.onRequest } : {});
+    this.scanner = new WifiBioZoomScanner(transport, {
+      ...(options.onRequest ? { onRequest: options.onRequest } : {}),
+      ...(options.onHandSample ? { onHandSample: options.onHandSample } : {}),
+    });
     // Compile-time check that the Wi-Fi scanner satisfies the workflow seam.
     const scanner: QuickAoxScanner = this.scanner;
     this.workflow = new QuickAoxWorkflow({ scanner, scoring: new NutriScanBrowserScoringGateway() });
