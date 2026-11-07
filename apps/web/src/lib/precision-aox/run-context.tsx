@@ -3,12 +3,15 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { DEFAULT_PRECISION_AOX_MEASUREMENT_COUNT } from '@nutriscan/scoring/quick-aox';
 import type { PrecisionAoxWorkflowEvent, PrecisionAoxWorkflowOutcome } from '@nutriscan/workflows';
-import { isWebSerialSupported } from '@/lib/quick-aox/browser-workflow';
+import { detectScannerConnection, type ScannerConnection } from '@/lib/quick-aox/scanner-connection';
 import { BrowserPrecisionAoxSession } from './browser-workflow';
+import { BrowserPrecisionAoxWifiSession } from './wifi-browser-workflow';
 import { ScannerRunGuard, type SafeScannerDiagnosticReport } from '../scanner-session-diagnostic';
 
 type PrecisionAoxRunContextValue = {
   capability: 'checking' | 'supported' | 'unsupported';
+  /** 'wifi' inside the NutriScan app, 'usb' with Web Serial; null while checking/unsupported. */
+  connection: ScannerConnection | null;
   event: PrecisionAoxWorkflowEvent | null;
   outcome: PrecisionAoxWorkflowOutcome | null;
   running: boolean;
@@ -26,19 +29,25 @@ const Context = createContext<PrecisionAoxRunContextValue | null>(null);
 
 export function PrecisionAoxRunProvider({ children }: { children: ReactNode }) {
   const [capability, setCapability] = useState<PrecisionAoxRunContextValue['capability']>('checking');
+  const [connection, setConnection] = useState<ScannerConnection | null>(null);
   const [event, setEvent] = useState<PrecisionAoxWorkflowEvent | null>(null);
   const [outcome, setOutcome] = useState<PrecisionAoxWorkflowOutcome | null>(null);
   const [running, setRunning] = useState(false);
   const controllerRef = useRef<AbortController | null>(null);
   const beginRef = useRef<(() => void) | null>(null);
   const replacementRef = useRef<(() => void) | null>(null);
-  const sessionRef = useRef<BrowserPrecisionAoxSession | null>(null);
+  const sessionRef = useRef<BrowserPrecisionAoxSession | BrowserPrecisionAoxWifiSession | null>(null);
   const runGuardRef = useRef(new ScannerRunGuard());
   const [diagnostic, setDiagnostic] = useState<SafeScannerDiagnosticReport | null>(null);
 
   useEffect(() => {
     let active = true;
-    queueMicrotask(() => { if (active) setCapability(isWebSerialSupported() ? 'supported' : 'unsupported'); });
+    queueMicrotask(() => {
+      if (!active) return;
+      const detected = detectScannerConnection();
+      setConnection(detected);
+      setCapability(detected ? 'supported' : 'unsupported');
+    });
     return () => {
       active = false;
       controllerRef.current?.abort('NutriScan closed the active Precision workflow');
@@ -47,7 +56,8 @@ export function PrecisionAoxRunProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const startRun = useCallback(() => {
-    if (!isWebSerialSupported()) return;
+    const detected = detectScannerConnection();
+    if (!detected) return;
     const guardRunId = crypto.randomUUID();
     if (!runGuardRef.current.tryStart(guardRunId)) return;
     const controller = new AbortController();
@@ -57,7 +67,9 @@ export function PrecisionAoxRunProvider({ children }: { children: ReactNode }) {
     setEvent(null);
     setOutcome(null);
     setRunning(true);
-    const session = sessionRef.current ?? new BrowserPrecisionAoxSession(undefined, setDiagnostic);
+    const session = sessionRef.current ?? (detected === 'wifi'
+      ? new BrowserPrecisionAoxWifiSession()
+      : new BrowserPrecisionAoxSession(undefined, setDiagnostic));
     sessionRef.current = session;
     session.startDiagnosticRun();
     const settlement = session.workflow.run({
@@ -117,7 +129,7 @@ export function PrecisionAoxRunProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return <Context.Provider value={{
-    capability, event, outcome, running, diagnostic, measurementCount: DEFAULT_PRECISION_AOX_MEASUREMENT_COUNT,
+    capability, connection, event, outcome, running, diagnostic, measurementCount: DEFAULT_PRECISION_AOX_MEASUREMENT_COUNT,
     startRun, beginMeasurement, authorizeReplacement, cancel, clearCompletedRun, releaseConnection,
   }}>{children}</Context.Provider>;
 }

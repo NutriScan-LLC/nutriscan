@@ -46,14 +46,31 @@ export default function ScanInstructionsPage() {
   const [agreed, setAgreed] = useState(false);
   const [scanType, setScanType] = useState<ScanType | null>(null);
   const [switching, setSwitching] = useState(false);
-  const { event, running, beginScan, releaseConnection } = useQuickAoxRun();
+  const { event, running, beginScan, releaseConnection, startRun, clearCompletedRun } = useQuickAoxRun();
   const precision = usePrecisionAoxRun();
   const quickReady = running && event?.state === "awaiting-begin";
   const precisionReady = precision.running && precision.event?.state === "constituent-progress" && precision.event.event.state === "awaiting-begin";
   const ready = scanType === "quick" ? quickReady : scanType === "precision" ? precisionReady : false;
 
+  async function selectQuick() {
+    if (scanType === "quick" || switching) return;
+    if (scanType === null) {
+      setScanType("quick");
+      return;
+    }
+    // Switching back from Precision: release Precision's scanner session, then
+    // reconnect Quick (it was released when Precision was selected).
+    setSwitching(true);
+    setScanType("quick");
+    await handoffScannerSession(precision.releaseConnection, () => {
+      clearCompletedRun();
+      startRun();
+    });
+    setSwitching(false);
+  }
+
   async function selectPrecision() {
-    if (scanType || switching) return;
+    if (scanType === "precision" || switching) return;
     setSwitching(true);
     setScanType("precision");
     await handoffScannerSession(releaseConnection, () => {
@@ -134,14 +151,14 @@ export default function ScanInstructionsPage() {
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <ScanTypeButton
               selected={scanType === "quick"}
-              disabled={scanType !== null && scanType !== "quick"}
+              disabled={switching}
               title="Quick AOX scan"
               detail="One measurement for a fast result."
-              onClick={() => setScanType("quick")}
+              onClick={() => void selectQuick()}
             />
             <ScanTypeButton
               selected={scanType === "precision"}
-              disabled={scanType !== null && scanType !== "precision"}
+              disabled={switching}
               title="Precision Scan"
               detail="Four accepted measurements combined by BioZoom."
               onClick={() => void selectPrecision()}
@@ -149,6 +166,9 @@ export default function ScanInstructionsPage() {
           </div>
           {scanType === "precision" && !precisionReady && (
             <p className="mt-3 text-center text-xs text-slate-500">Preparing the authorized scanner for Precision…</p>
+          )}
+          {scanType === "quick" && !quickReady && (
+            <p className="mt-3 text-center text-xs text-slate-500">Reconnecting the scanner for Quick AOX…</p>
           )}
         </div>
 

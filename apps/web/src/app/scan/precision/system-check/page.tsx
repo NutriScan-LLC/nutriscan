@@ -1,20 +1,23 @@
 'use client';
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { BrowserIcon, ScannerDeviceIcon, UsbIcon } from '@/components/icons';
+import { BrowserIcon, ScannerDeviceIcon, UsbIcon, WifiRingsIcon } from '@/components/icons';
 import ScannerLayout from '@/components/scan/ScannerLayout';
 import { usePrecisionAoxRun } from '@/lib/precision-aox/run-context';
 
 export default function PrecisionSystemCheckPage() {
   const router = useRouter();
-  const { capability, event, outcome, running, startRun, clearCompletedRun } = usePrecisionAoxRun();
+  const { capability, connection, event, outcome, running, startRun, clearCompletedRun } = usePrecisionAoxRun();
+  const wifi = connection === 'wifi';
   const quickEvent = event?.state === 'constituent-progress' ? event.event : null;
   const identified = quickEvent?.state === 'awaiting-begin';
   useEffect(() => { if (identified) router.push('/scan/precision'); }, [identified, router]);
   return <ScannerLayout
     eyebrow="Precision Scan"
     title="Checking your setup"
-    description="The same Web Serial scanner connection stays active across all four measurements."
+    description={wifi
+      ? 'The same scanner Wi-Fi connection stays active across all four measurements. Join the biozoomAP_ network first and keep cellular data on.'
+      : 'The same Web Serial scanner connection stays active across all four measurements.'}
     primaryAction={{
       label: running ? 'Connecting to scanner…' : 'Connect scanner',
       disabled: capability !== 'supported' || running,
@@ -22,10 +25,12 @@ export default function PrecisionSystemCheckPage() {
     }}
   >
     <div className="space-y-3">
-      <Check icon={BrowserIcon} label="Compatible desktop browser" ok={capability !== 'checking'} />
-      <Check icon={UsbIcon} label="Web Serial available" ok={capability === 'supported'} failed={capability === 'unsupported'} />
+      <Check icon={BrowserIcon} label={wifi ? 'NutriScan app' : 'Compatible desktop browser'} ok={capability !== 'checking'} />
+      {wifi
+        ? <Check icon={WifiRingsIcon} label="NutriScan app Wi-Fi connection" ok={capability === 'supported'} />
+        : <Check icon={UsbIcon} label="Web Serial available" ok={capability === 'supported'} failed={capability === 'unsupported'} />}
       <Check icon={ScannerDeviceIcon} label={identified ? 'Scanner identified' : 'Scanner connection'} ok={identified} failed={outcome?.kind === 'failed'} />
-      {capability === 'unsupported' && <p className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Use the latest Chrome or Edge on a desktop computer.</p>}
+      {capability === 'unsupported' && <p className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Use the latest Chrome or Edge on a desktop computer, or the NutriScan app with a Wi-Fi scanner.</p>}
     </div>
   </ScannerLayout>;
 }
